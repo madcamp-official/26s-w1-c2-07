@@ -27,3 +27,9 @@ export const profileUpdateSchema = z.object({
   nickname: z.string().trim().min(1).max(30).optional(),
   profileImageUrl: z.string().url().nullable().optional(),
 });
+
+export const seatMapUploadSchema = z.object({
+  concertId: z.string().uuid(),
+  imageWidth: z.coerce.number().int().positive().max(50000).optional(),
+  imageHeight: z.coerce.number().int().positive().max(50000).optional(),
+});

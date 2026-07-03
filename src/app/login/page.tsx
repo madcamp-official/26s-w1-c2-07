@@ -3,11 +3,25 @@ import { redirect } from "next/navigation";
 import { LoginForm } from "@/app/login/login-form";
 import { getCurrentUser } from "@/lib/auth";
 
-export default async function LoginPage() {
+type LoginPageProps = {
+  searchParams: Promise<{
+    redirect?: string;
+  }>;
+};
+
+function getSafeRedirectPath(redirectPath: string | undefined) {
+  return redirectPath?.startsWith("/") && !redirectPath.startsWith("//")
+    ? redirectPath
+    : "/my";
+}
+
+export default async function LoginPage({ searchParams }: LoginPageProps) {
+  const { redirect: redirectPath } = await searchParams;
+  const safeRedirectPath = getSafeRedirectPath(redirectPath);
   const user = await getCurrentUser();
 
   if (user) {
-    redirect("/my");
+    redirect(safeRedirectPath);
   }
 
   return (
@@ -19,10 +33,9 @@ export default async function LoginPage() {
           계정입니다.
         </p>
         <div className="mt-6">
-          <LoginForm />
+          <LoginForm redirectPath={safeRedirectPath} />
         </div>
       </section>
     </main>
   );
 }
-
