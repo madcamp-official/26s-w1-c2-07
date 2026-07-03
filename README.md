@@ -279,7 +279,42 @@
 - **실행 방법:**
 
 ```bash
-# 실행 방법 작성
+git clone https://github.com/madcamp-official/26s-w1-c2-07.git
+cd 26s-w1-c2-07
+
+corepack enable
+corepack prepare pnpm@10.33.0 --activate
+
+pnpm install
+cp .env.example .env
+
+pnpm prisma:generate
+pnpm dev
+```
+
+`.env` 파일에는 다음 값을 입력해야 한다.
+
+```env
+DATABASE_URL=
+DIRECT_URL=
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
+OPENAI_API_KEY=
+```
+
+개발 서버 실행 후 브라우저에서 접속한다.
+
+```text
+http://localhost:3000
+```
+
+배포 전 검증은 다음 명령어로 확인한다.
+
+```bash
+pnpm lint
+pnpm typecheck
+pnpm build
 ```
 
 ---
