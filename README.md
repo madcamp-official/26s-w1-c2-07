@@ -8,32 +8,6 @@
 
 ---
 
-## 팀원
-
-<table>
-  <thead>
-    <tr>
-      <th width="120">이름</th>
-      <th width="160">GitHub</th>
-      <th>역할</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td>김도연</td>
-      <td></td>
-      <td>기획, 사용자 흐름, 화면 설계, 티켓팅 연습, 좌석 리뷰</td>
-    </tr>
-    <tr>
-      <td>박정준</td>
-      <td></td>
-      <td>DB/API 설계, 콘서트 정보, 좌석 정보, 배포 기술 문서</td>
-    </tr>
-  </tbody>
-</table>
-
----
-
 ## 기획안
 
 > 프로젝트 주제, 목적, 핵심 기능, 예상 사용자, 팀원별 역할 등 정리
