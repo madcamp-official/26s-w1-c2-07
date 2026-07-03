@@ -44,7 +44,7 @@ export default function Home() {
           </div>
           <div className="mt-6 flex flex-wrap gap-2">
             <Button asChild>
-              <Link href="/login">로그인 시작</Link>
+              <Link href="/concerts">공연 목록 보기</Link>
             </Button>
             <Button asChild variant="outline">
               <Link href="/my">마이페이지 확인</Link>

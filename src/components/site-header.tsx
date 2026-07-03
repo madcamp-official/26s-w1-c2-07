@@ -20,6 +20,9 @@ export async function SiteHeader() {
           <Button asChild variant="ghost" size="sm">
             <Link href="/">홈</Link>
           </Button>
+          <Button asChild variant="ghost" size="sm">
+            <Link href="/concerts">공연 목록</Link>
+          </Button>
           {auth ? (
             <>
               <Button asChild variant="outline" size="sm">
