@@ -83,8 +83,10 @@ export default async function SeatMapPage({ params }: SeatMapPageProps) {
                 id: zone.id,
                 name: zone.name,
                 grade: zone.grade,
+                price: zone.price,
                 bbox: zone.bbox,
                 confidence: zone.confidence,
+                isAiGenerated: zone.isAiGenerated,
               })),
             }}
           />

@@ -31,6 +31,16 @@ export const seatZoneSchema = z.object({
   confidence: z.number().min(0).max(1).optional(),
 });
 
+export const seatZoneUpdateSchema = z.object({
+  name: z.string().trim().min(1).max(50),
+  grade: z
+    .string()
+    .trim()
+    .max(30)
+    .transform((value) => value || "미확인"),
+  price: z.number().int().nonnegative().nullable().optional(),
+});
+
 export const profileUpdateSchema = z.object({
   nickname: z.string().trim().min(1).max(30).optional(),
   profileImageUrl: z.string().url().nullable().optional(),
