@@ -12,19 +12,11 @@ import {
 
 type AuthMode = "login" | "signup";
 
-function getInitialRedirectPath() {
-  if (typeof window === "undefined") {
-    return "/my";
-  }
+type LoginFormProps = {
+  redirectPath: string;
+};
 
-  const redirect = new URLSearchParams(window.location.search).get("redirect");
-
-  return redirect?.startsWith("/") && !redirect.startsWith("//")
-    ? redirect
-    : "/my";
-}
-
-export function LoginForm() {
+export function LoginForm({ redirectPath }: LoginFormProps) {
   const router = useRouter();
   const [mode, setMode] = useState<AuthMode>("login");
   const [email, setEmail] = useState("");
@@ -32,7 +24,6 @@ export function LoginForm() {
   const [nickname, setNickname] = useState("");
   const [message, setMessage] = useState("");
   const [isPending, setIsPending] = useState(false);
-  const [redirectPath] = useState(getInitialRedirectPath);
   const isConfigured = hasSupabaseBrowserConfig();
 
   const supabase = useMemo(() => {

@@ -38,6 +38,10 @@ export default async function ConcertDetailPage({
     notFound();
   }
 
+  const isSeatMapAnalyzed =
+    concert.latestSeatMap?.analysisStatus === "success" &&
+    concert.latestSeatMap.zoneCount > 0;
+
   return (
     <main className="mx-auto w-full max-w-6xl px-6 py-8">
       <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
@@ -102,10 +106,24 @@ export default async function ConcertDetailPage({
         <aside className="space-y-4">
           <section className="rounded-lg border bg-card p-5">
             <h2 className="text-lg font-semibold">좌석 데이터</h2>
+            {concert.latestSeatMap ? (
+              <div className="mt-4 overflow-hidden rounded-md border bg-secondary">
+                <div
+                  className="min-h-44 bg-contain bg-center bg-no-repeat"
+                  style={{
+                    backgroundImage: `url(${concert.latestSeatMap.imageUrl})`,
+                  }}
+                />
+              </div>
+            ) : null}
             <div className="mt-4 grid gap-3 text-sm">
               <div className="flex items-center justify-between border-b pb-3">
                 <span className="text-muted-foreground">좌석 배치도</span>
                 <span>{concert.hasSeatMap ? "등록됨" : "미등록"}</span>
+              </div>
+              <div className="flex items-center justify-between border-b pb-3">
+                <span className="text-muted-foreground">분석 상태</span>
+                <span>{concert.latestSeatMap?.analysisStatus ?? "없음"}</span>
               </div>
               <div className="flex items-center justify-between border-b pb-3">
                 <span className="text-muted-foreground">좌석 구역</span>
@@ -124,11 +142,17 @@ export default async function ConcertDetailPage({
               <Button asChild>
                 <Link href={`/concerts/${concert.id}/seat-map`}>
                   <ImageUp className="h-4 w-4" aria-hidden="true" />
-                  좌석 배치도 업로드
+                  {concert.hasSeatMap ? "좌석 배치도 다시 업로드" : "좌석 배치도 업로드"}
                 </Link>
               </Button>
 
               {concert.hasSeatMap ? (
+                <Button type="button" variant="outline" disabled>
+                  AI 분석 준비 중
+                </Button>
+              ) : null}
+
+              {isSeatMapAnalyzed ? (
                 <>
                   <Button asChild variant="outline">
                     <Link href={`/concerts/${concert.id}/practice`}>
