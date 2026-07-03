@@ -8,6 +8,7 @@ import {
   MessageSquare,
   PlayCircle,
   Ticket,
+  WandSparkles,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -147,8 +148,11 @@ export default async function ConcertDetailPage({
               </Button>
 
               {concert.hasSeatMap ? (
-                <Button type="button" variant="outline" disabled>
-                  AI 분석 준비 중
+                <Button asChild variant="outline">
+                  <Link href={`/concerts/${concert.id}/seat-map`}>
+                    <WandSparkles className="h-4 w-4" aria-hidden="true" />
+                    AI 분석 및 결과 확인
+                  </Link>
                 </Button>
               ) : null}
 

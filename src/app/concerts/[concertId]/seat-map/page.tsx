@@ -4,9 +4,11 @@ import { ArrowLeft, ImageUp } from "lucide-react";
 import { z } from "zod";
 
 import { Button } from "@/components/ui/button";
+import { SeatMapAnalysisPanel } from "@/app/concerts/[concertId]/seat-map/seat-map-analysis-panel";
 import { SeatMapUploadForm } from "@/app/concerts/[concertId]/seat-map/seat-map-upload-form";
 import { getConcertDetail } from "@/lib/concerts";
 import { getCurrentUser } from "@/lib/auth";
+import { getLatestSeatMapForConcert } from "@/lib/seat-maps";
 
 const concertIdSchema = z.string().uuid();
 
@@ -36,6 +38,8 @@ export default async function SeatMapPage({ params }: SeatMapPageProps) {
     redirect(`/login?redirect=/concerts/${concert.id}/seat-map`);
   }
 
+  const latestSeatMap = await getLatestSeatMapForConcert(concert.id);
+
   return (
     <main className="mx-auto w-full max-w-4xl px-6 py-8">
       <Button asChild variant="ghost" size="sm">
@@ -52,11 +56,13 @@ export default async function SeatMapPage({ params }: SeatMapPageProps) {
           </div>
           <div>
             <p className="text-sm text-muted-foreground">{concert.title}</p>
-            <h1 className="mt-1 text-2xl font-semibold">좌석 배치도 업로드</h1>
+            <h1 className="mt-1 text-2xl font-semibold">
+              좌석 배치도 업로드 및 AI 분석
+            </h1>
             <p className="mt-3 text-sm leading-6 text-muted-foreground">
               공연장 좌석 배치도 이미지를 업로드하면 공연별 좌석 데이터의 기준
-              이미지로 저장됩니다. AI 좌석 구역 분석은 다음 단계에서 이
-              이미지에 연결됩니다.
+              이미지로 저장됩니다. 업로드된 이미지는 AI가 구역 후보를 분석하고,
+              이후 티켓팅 연습과 좌석 리뷰의 기준 데이터로 사용됩니다.
             </p>
           </div>
         </div>
@@ -65,6 +71,25 @@ export default async function SeatMapPage({ params }: SeatMapPageProps) {
           <SeatMapUploadForm concertId={concert.id} />
         </div>
       </section>
+
+      {latestSeatMap ? (
+        <div className="mt-6">
+          <SeatMapAnalysisPanel
+            seatMap={{
+              id: latestSeatMap.id,
+              imageUrl: latestSeatMap.imageUrl,
+              analysisStatus: latestSeatMap.analysisStatus,
+              zones: latestSeatMap.zones.map((zone) => ({
+                id: zone.id,
+                name: zone.name,
+                grade: zone.grade,
+                bbox: zone.bbox,
+                confidence: zone.confidence,
+              })),
+            }}
+          />
+        </div>
+      ) : null}
     </main>
   );
 }

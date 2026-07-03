@@ -104,6 +104,7 @@ model SeatZone {
   name             String
   grade            String
   price            Int?
+  bbox             Json?
   polygon          Json
   confidence       Float?
   isAiGenerated    Boolean           @default(true)

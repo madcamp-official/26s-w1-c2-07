@@ -3,9 +3,17 @@ export type Point = {
   y: number;
 };
 
+export type BoundingBox = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
 export type SeatZoneAnalysis = {
   name: string;
   grade: string;
+  bbox?: BoundingBox;
   polygon: Point[];
   confidence?: number;
 };

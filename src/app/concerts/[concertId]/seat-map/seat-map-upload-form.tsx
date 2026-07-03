@@ -144,7 +144,7 @@ export function SeatMapUploadForm({ concertId }: SeatMapUploadFormProps) {
         );
       }
 
-      router.push(`/concerts/${concertId}`);
+      router.push(`/concerts/${concertId}/seat-map`);
       router.refresh();
     } catch (error) {
       setMessage(
@@ -214,4 +214,3 @@ export function SeatMapUploadForm({ concertId }: SeatMapUploadFormProps) {
     </form>
   );
 }
-

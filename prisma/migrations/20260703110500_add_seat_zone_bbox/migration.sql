@@ -1,0 +1,1 @@
+ALTER TABLE "SeatZone" ADD COLUMN "bbox" JSONB;
