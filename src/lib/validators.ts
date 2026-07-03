@@ -14,6 +14,14 @@ export const seatZoneSchema = z.object({
   name: z.string().min(1),
   grade: z.string().min(1),
   price: z.number().int().nonnegative().optional(),
+  bbox: z
+    .object({
+      x: z.number().min(0).max(1),
+      y: z.number().min(0).max(1),
+      width: z.number().min(0).max(1),
+      height: z.number().min(0).max(1),
+    })
+    .optional(),
   polygon: z.array(
     z.object({
       x: z.number(),
