@@ -1,8 +1,15 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { FormEvent, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, Loader2, WandSparkles } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Loader2,
+  Save,
+  Trash2,
+  WandSparkles,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 
@@ -17,18 +24,26 @@ type BoundingBox = {
   height: number;
 };
 
+type SeatMapZone = {
+  id: string;
+  name: string;
+  grade: string;
+  price: number | null;
+  bbox: unknown;
+  confidence: number | null;
+  isAiGenerated: boolean;
+};
+
+type AnalyzedSeatMapZone = Omit<SeatMapZone, "bbox"> & {
+  bbox: BoundingBox;
+};
+
 type SeatMapAnalysisPanelProps = {
   seatMap: {
     id: string;
     imageUrl: string;
     analysisStatus: AnalysisStatus;
-    zones: Array<{
-      id: string;
-      name: string;
-      grade: string;
-      bbox: unknown;
-      confidence: number | null;
-    }>;
+    zones: SeatMapZone[];
   };
 };
 
@@ -36,6 +51,12 @@ type AnalyzeResponse = {
   data?: {
     zoneCount?: number;
   };
+  error?: {
+    message?: string;
+  };
+};
+
+type ZoneMutationResponse = {
   error?: {
     message?: string;
   };
@@ -88,10 +109,21 @@ function isLowConfidence(confidence: number | null) {
   return confidence === null || confidence < LOW_CONFIDENCE_THRESHOLD;
 }
 
+function formatPrice(price: number | null) {
+  return typeof price === "number"
+    ? `${price.toLocaleString("ko-KR")}원`
+    : "가격 미입력";
+}
+
 export function SeatMapAnalysisPanel({ seatMap }: SeatMapAnalysisPanelProps) {
   const router = useRouter();
   const [message, setMessage] = useState("");
   const [isPending, setIsPending] = useState(false);
+  const [isMutating, setIsMutating] = useState(false);
+  const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
+  const [name, setName] = useState("");
+  const [grade, setGrade] = useState("");
+  const [price, setPrice] = useState("");
   const zones = useMemo(
     () =>
       seatMap.zones
@@ -99,13 +131,19 @@ export function SeatMapAnalysisPanel({ seatMap }: SeatMapAnalysisPanelProps) {
           ...zone,
           bbox: parseBbox(zone.bbox),
         }))
-        .filter((zone): zone is typeof zone & { bbox: BoundingBox } =>
-          Boolean(zone.bbox),
-        ),
+        .filter((zone): zone is AnalyzedSeatMapZone => Boolean(zone.bbox)),
     [seatMap.zones],
   );
+  const selectedZone = zones.find((zone) => zone.id === selectedZoneId) ?? null;
   const canAnalyze =
     seatMap.analysisStatus === "pending" || seatMap.analysisStatus === "failed";
+
+  function selectZone(zone: AnalyzedSeatMapZone) {
+    setSelectedZoneId(zone.id);
+    setName(zone.name);
+    setGrade(zone.grade);
+    setPrice(typeof zone.price === "number" ? String(zone.price) : "");
+  }
 
   async function handleAnalyze() {
     setIsPending(true);
@@ -135,6 +173,115 @@ export function SeatMapAnalysisPanel({ seatMap }: SeatMapAnalysisPanelProps) {
       );
     } finally {
       setIsPending(false);
+    }
+  }
+
+  async function handleSave(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!selectedZone) {
+      setMessage("수정할 좌석 구역을 선택해주세요.");
+      return;
+    }
+
+    const trimmedName = name.trim();
+    const trimmedGrade = grade.trim() || "미확인";
+    const trimmedPrice = price.trim();
+    let parsedPrice: number | null = null;
+
+    if (!trimmedName) {
+      setMessage("구역명을 입력해주세요.");
+      return;
+    }
+
+    if (trimmedPrice.length > 0) {
+      parsedPrice = Number.parseInt(trimmedPrice, 10);
+
+      if (!Number.isInteger(parsedPrice) || parsedPrice < 0) {
+        setMessage("가격은 0 이상의 정수로 입력해주세요.");
+        return;
+      }
+    }
+
+    setIsMutating(true);
+    setMessage("");
+
+    try {
+      const response = await fetch(`/api/seat-zones/${selectedZone.id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: trimmedName,
+          grade: trimmedGrade,
+          price: parsedPrice,
+        }),
+      });
+      const payload = (await response.json()) as ZoneMutationResponse;
+
+      if (!response.ok) {
+        throw new Error(
+          payload.error?.message ?? "좌석 구역 수정에 실패했습니다.",
+        );
+      }
+
+      setMessage("좌석 구역 정보를 저장했습니다.");
+      router.refresh();
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "좌석 구역 수정에 실패했습니다.",
+      );
+    } finally {
+      setIsMutating(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!selectedZone) {
+      setMessage("삭제할 좌석 구역을 선택해주세요.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `${selectedZone.name} 구역을 삭제할까요? 이 작업은 되돌릴 수 없습니다.`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setIsMutating(true);
+    setMessage("");
+
+    try {
+      const response = await fetch(`/api/seat-zones/${selectedZone.id}`, {
+        method: "DELETE",
+      });
+      const payload = (await response.json()) as ZoneMutationResponse;
+
+      if (!response.ok) {
+        throw new Error(
+          payload.error?.message ?? "좌석 구역 삭제에 실패했습니다.",
+        );
+      }
+
+      setSelectedZoneId(null);
+      setName("");
+      setGrade("");
+      setPrice("");
+      setMessage("좌석 구역을 삭제했습니다.");
+      router.refresh();
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "좌석 구역 삭제에 실패했습니다.",
+      );
+    } finally {
+      setIsMutating(false);
     }
   }
 
@@ -180,15 +327,20 @@ export function SeatMapAnalysisPanel({ seatMap }: SeatMapAnalysisPanelProps) {
           />
           {zones.map((zone) => {
             const lowConfidence = isLowConfidence(zone.confidence);
+            const isSelected = selectedZone?.id === zone.id;
 
             return (
-              <div
+              <button
                 key={zone.id}
+                type="button"
+                onClick={() => selectZone(zone)}
                 className={[
-                  "absolute border-2 text-[11px] font-medium",
-                  lowConfidence
-                    ? "border-amber-500 bg-amber-400/15 text-amber-950"
-                    : "border-emerald-500 bg-emerald-400/15 text-emerald-950",
+                  "absolute border-2 text-left text-[11px] font-medium outline-none transition",
+                  isSelected
+                    ? "border-primary bg-primary/20 ring-2 ring-primary/60"
+                    : lowConfidence
+                      ? "border-amber-500 bg-amber-400/15"
+                      : "border-emerald-500 bg-emerald-400/15",
                 ].join(" ")}
                 style={{
                   left: `${zone.bbox.x * 100}%`,
@@ -200,36 +352,141 @@ export function SeatMapAnalysisPanel({ seatMap }: SeatMapAnalysisPanelProps) {
                 <span className="inline-flex max-w-full items-center gap-1 bg-background/90 px-1.5 py-1 text-foreground shadow-sm">
                   {lowConfidence ? (
                     <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+                  ) : !zone.isAiGenerated ? (
+                    <CheckCircle2 className="h-3 w-3" aria-hidden="true" />
                   ) : null}
                   <span className="truncate">
                     {zone.name} · {zone.grade}
-                    {lowConfidence ? " · 확인 필요" : ""}
+                    {lowConfidence
+                      ? " · 확인 필요"
+                      : !zone.isAiGenerated
+                        ? " · 수정됨"
+                        : ""}
                   </span>
                 </span>
-              </div>
+              </button>
             );
           })}
         </div>
       </div>
 
       {zones.length > 0 ? (
-        <div className="mt-4 grid gap-2 text-sm">
-          {zones.map((zone) => (
-            <div
-              key={zone.id}
-              className="flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2"
-            >
-              <span className="font-medium">
-                {zone.name} · {zone.grade}
-              </span>
-              <span className="text-muted-foreground">
-                신뢰도{" "}
-                {typeof zone.confidence === "number"
-                  ? `${Math.round(zone.confidence * 100)}%`
-                  : "확인 필요"}
-              </span>
+        <div className="mt-5 grid gap-5 lg:grid-cols-[1fr_320px]">
+          <div className="grid gap-2 text-sm">
+            {zones.map((zone) => {
+              const lowConfidence = isLowConfidence(zone.confidence);
+              const isSelected = selectedZone?.id === zone.id;
+
+              return (
+                <button
+                  key={zone.id}
+                  type="button"
+                  onClick={() => selectZone(zone)}
+                  className={[
+                    "flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 text-left transition",
+                    isSelected ? "border-primary bg-primary/5" : "",
+                  ].join(" ")}
+                >
+                  <span className="font-medium">
+                    {zone.name} · {zone.grade}
+                    {!zone.isAiGenerated ? (
+                      <span className="ml-2 text-xs text-primary">
+                        사용자 수정됨
+                      </span>
+                    ) : null}
+                  </span>
+                  <span className="text-muted-foreground">
+                    {formatPrice(zone.price)} · 신뢰도{" "}
+                    {typeof zone.confidence === "number"
+                      ? `${Math.round(zone.confidence * 100)}%`
+                      : "확인 필요"}
+                    {lowConfidence ? " · 확인 필요" : ""}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          <form
+            className="rounded-md border bg-secondary p-4"
+            onSubmit={handleSave}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="font-semibold">선택 구역 수정</h3>
+                {selectedZone ? (
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {selectedZone.name} · {selectedZone.grade}
+                  </p>
+                ) : null}
+              </div>
+              {selectedZone && isLowConfidence(selectedZone.confidence) ? (
+                <span className="shrink-0 rounded-md border border-amber-300 bg-amber-100 px-2 py-1 text-xs text-amber-900">
+                  확인 필요
+                </span>
+              ) : null}
             </div>
-          ))}
+
+            <div className="mt-4 grid gap-3">
+              <label className="grid gap-1.5 text-sm font-medium">
+                구역명
+                <input
+                  className="rounded-md border bg-background px-3 py-2 text-sm"
+                  value={name}
+                  maxLength={50}
+                  onChange={(event) => setName(event.target.value)}
+                  disabled={!selectedZone || isMutating}
+                />
+              </label>
+
+              <label className="grid gap-1.5 text-sm font-medium">
+                등급
+                <input
+                  className="rounded-md border bg-background px-3 py-2 text-sm"
+                  value={grade}
+                  maxLength={30}
+                  placeholder="미확인, VIP, R, S, A"
+                  onChange={(event) => setGrade(event.target.value)}
+                  disabled={!selectedZone || isMutating}
+                />
+              </label>
+
+              <label className="grid gap-1.5 text-sm font-medium">
+                가격
+                <input
+                  className="rounded-md border bg-background px-3 py-2 text-sm"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  value={price}
+                  placeholder="예: 165000"
+                  onChange={(event) =>
+                    setPrice(event.target.value.replace(/[^0-9]/g, ""))
+                  }
+                  disabled={!selectedZone || isMutating}
+                />
+              </label>
+            </div>
+
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              <Button type="submit" disabled={!selectedZone || isMutating}>
+                {isMutating ? (
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <Save className="h-4 w-4" aria-hidden="true" />
+                )}
+                저장
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleDelete}
+                disabled={!selectedZone || isMutating}
+              >
+                <Trash2 className="h-4 w-4" aria-hidden="true" />
+                삭제
+              </Button>
+            </div>
+          </form>
         </div>
       ) : (
         <p className="mt-4 text-sm text-muted-foreground">
