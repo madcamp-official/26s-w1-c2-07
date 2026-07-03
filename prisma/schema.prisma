@@ -1,0 +1,181 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum AnalysisStatus {
+  pending
+  success
+  failed
+}
+
+enum SeatStatus {
+  available
+  sold
+  disabled
+}
+
+enum TicketTemplateType {
+  interpark
+  melon
+  yes24
+  basic
+}
+
+enum PracticeDifficulty {
+  easy
+  normal
+  hard
+}
+
+enum PracticeStatus {
+  started
+  success
+  failed
+}
+
+model Profile {
+  id                String            @id @db.Uuid
+  nickname          String?
+  profileImageUrl   String?
+  createdAt         DateTime          @default(now())
+  seatMaps          SeatMap[]         @relation("SeatMapCreatedBy")
+  reviews           Review[]
+  practiceSessions  PracticeSession[]
+}
+
+model Concert {
+  id               String             @id @default(uuid()) @db.Uuid
+  title            String
+  artist           String
+  venueName        String
+  region           String
+  startDate        DateTime
+  endDate          DateTime
+  priceMin         Int
+  priceMax         Int
+  posterImageUrl   String?
+  description      String?
+  createdAt        DateTime           @default(now())
+  schedules        ConcertSchedule[]
+  seatMaps         SeatMap[]
+  reviews          Review[]
+  practiceSessions PracticeSession[]
+}
+
+model ConcertSchedule {
+  id               String            @id @default(uuid()) @db.Uuid
+  concertId        String            @db.Uuid
+  performanceDate  DateTime
+  roundName        String
+  startTime        String
+  concert          Concert           @relation(fields: [concertId], references: [id], onDelete: Cascade)
+  practiceSessions PracticeSession[]
+
+  @@index([concertId])
+}
+
+model SeatMap {
+  id             String         @id @default(uuid()) @db.Uuid
+  concertId      String         @db.Uuid
+  imageUrl       String
+  imageWidth     Int?
+  imageHeight    Int?
+  analysisStatus AnalysisStatus @default(pending)
+  aiRawResult    Json?
+  createdBy      String         @db.Uuid
+  createdAt      DateTime       @default(now())
+  concert        Concert        @relation(fields: [concertId], references: [id], onDelete: Cascade)
+  creator        Profile        @relation("SeatMapCreatedBy", fields: [createdBy], references: [id])
+  zones          SeatZone[]
+
+  @@index([concertId])
+  @@index([createdBy])
+}
+
+model SeatZone {
+  id               String            @id @default(uuid()) @db.Uuid
+  seatMapId        String            @db.Uuid
+  name             String
+  grade            String
+  price            Int?
+  polygon          Json
+  confidence       Float?
+  isAiGenerated    Boolean           @default(true)
+  virtualSeatConfig Json?
+  createdAt        DateTime          @default(now())
+  seatMap          SeatMap           @relation(fields: [seatMapId], references: [id], onDelete: Cascade)
+  virtualSeats     VirtualSeat[]
+  reviews          Review[]
+  practiceSessions PracticeSession[]
+
+  @@index([seatMapId])
+}
+
+model VirtualSeat {
+  id               String            @id @default(uuid()) @db.Uuid
+  zoneId           String            @db.Uuid
+  rowLabel         String
+  seatNumber       Int
+  status           SeatStatus        @default(available)
+  x                Float?
+  y                Float?
+  zone             SeatZone          @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  practiceSessions PracticeSession[]
+
+  @@index([zoneId])
+  @@unique([zoneId, rowLabel, seatNumber])
+}
+
+model Review {
+  id                String   @id @default(uuid()) @db.Uuid
+  userId            String   @db.Uuid
+  concertId         String   @db.Uuid
+  zoneId            String   @db.Uuid
+  viewScore         Int
+  soundScore        Int
+  distanceScore     Int
+  satisfactionScore Int
+  content           String
+  imageUrl          String?
+  likeCount         Int      @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  user              Profile  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  concert           Concert  @relation(fields: [concertId], references: [id], onDelete: Cascade)
+  zone              SeatZone @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([concertId])
+  @@index([zoneId])
+}
+
+model PracticeSession {
+  id             String             @id @default(uuid()) @db.Uuid
+  userId         String?            @db.Uuid
+  concertId      String             @db.Uuid
+  scheduleId     String?            @db.Uuid
+  templateType   TicketTemplateType
+  difficulty     PracticeDifficulty @default(normal)
+  status         PracticeStatus     @default(started)
+  selectedZoneId String?            @db.Uuid
+  selectedSeatId String?            @db.Uuid
+  elapsedMs      Int                @default(0)
+  failReason     String?
+  createdAt      DateTime           @default(now())
+  completedAt    DateTime?
+  user           Profile?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  concert        Concert            @relation(fields: [concertId], references: [id], onDelete: Cascade)
+  schedule       ConcertSchedule?   @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
+  selectedZone   SeatZone?          @relation(fields: [selectedZoneId], references: [id], onDelete: SetNull)
+  selectedSeat   VirtualSeat?       @relation(fields: [selectedSeatId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([concertId])
+  @@index([selectedZoneId])
+}
