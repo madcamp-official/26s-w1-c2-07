@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { Button } from "@/components/ui/button";
 
 const coreFeatures = [
@@ -21,20 +23,7 @@ const stack = [
 
 export default function Home() {
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-10 px-6 py-8">
-      <header className="flex flex-wrap items-center justify-between gap-4 border-b pb-5">
-        <div>
-          <p className="text-sm text-muted-foreground">26s-w1-c2-07</p>
-          <h1 className="text-2xl font-semibold tracking-normal">
-            콘서트 티켓팅 연습 플랫폼
-          </h1>
-        </div>
-        <nav className="flex gap-2">
-          <Button variant="outline">공연 목록</Button>
-          <Button>티켓팅 연습</Button>
-        </nav>
-      </header>
-
+    <main className="mx-auto flex min-h-[calc(100vh-73px)] w-full max-w-6xl flex-col gap-10 px-6 py-8">
       <section className="grid gap-4 md:grid-cols-[1.2fr_0.8fr]">
         <div className="rounded-lg border bg-card p-6">
           <h2 className="text-xl font-semibold">MVP 개발 환경</h2>
@@ -52,6 +41,14 @@ export default function Home() {
                 {item}
               </span>
             ))}
+          </div>
+          <div className="mt-6 flex flex-wrap gap-2">
+            <Button asChild>
+              <Link href="/login">로그인 시작</Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link href="/my">마이페이지 확인</Link>
+            </Button>
           </div>
         </div>
 
