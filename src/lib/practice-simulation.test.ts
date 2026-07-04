@@ -51,19 +51,19 @@ describe("practice-simulation", () => {
         difficulty: "easy",
         totalAvailableSeats: 100,
       }),
-    ).toBe(12);
+    ).toBe(10);
     expect(
       getSelectableSeatCount({
         difficulty: "normal",
         totalAvailableSeats: 100,
       }),
-    ).toBe(8);
+    ).toBe(6);
     expect(
       getSelectableSeatCount({
         difficulty: "hard",
         totalAvailableSeats: 100,
       }),
-    ).toBe(5);
+    ).toBe(3);
     expect(
       getSelectableSeatCount({
         difficulty: "hard",

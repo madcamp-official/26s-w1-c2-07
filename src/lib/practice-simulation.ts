@@ -20,27 +20,33 @@ type SeatClaimPolicy = {
   selectionDeadlineMs: number | null;
 };
 
+type SeatSellOutPolicy = {
+  intervalMs: number;
+  minRemoveCount: number;
+  maxRemoveCount: number;
+};
+
 export const QUEUE_POLICY: Record<PracticeDifficulty, QueuePolicy> = {
   easy: {
-    min: 180,
-    max: 450,
-    intervalMs: 220,
-    decrementMin: 30,
-    decrementMax: 80,
+    min: 300,
+    max: 800,
+    intervalMs: 240,
+    decrementMin: 25,
+    decrementMax: 65,
   },
   normal: {
-    min: 600,
-    max: 1400,
-    intervalMs: 260,
-    decrementMin: 45,
-    decrementMax: 120,
+    min: 900,
+    max: 2200,
+    intervalMs: 300,
+    decrementMin: 35,
+    decrementMax: 85,
   },
   hard: {
-    min: 1800,
-    max: 4200,
-    intervalMs: 300,
-    decrementMin: 80,
-    decrementMax: 220,
+    min: 2600,
+    max: 6200,
+    intervalMs: 340,
+    decrementMin: 50,
+    decrementMax: 115,
   },
 };
 
@@ -49,19 +55,19 @@ export const SELECTABLE_SEAT_POLICY: Record<
   SelectableSeatPolicy
 > = {
   easy: {
-    minCount: 8,
-    maxCount: 12,
-    ratio: 0.18,
+    minCount: 6,
+    maxCount: 10,
+    ratio: 0.12,
   },
   normal: {
-    minCount: 5,
-    maxCount: 8,
-    ratio: 0.1,
+    minCount: 4,
+    maxCount: 6,
+    ratio: 0.06,
   },
   hard: {
-    minCount: 3,
-    maxCount: 5,
-    ratio: 0.05,
+    minCount: 2,
+    maxCount: 4,
+    ratio: 0.025,
   },
 };
 
@@ -70,19 +76,40 @@ export const SEAT_CLAIM_POLICY: Record<
   SeatClaimPolicy
 > = {
   easy: {
-    delayMs: 1400,
-    successRate: 0.75,
+    delayMs: 1500,
+    successRate: 0.6,
     selectionDeadlineMs: null,
   },
   normal: {
-    delayMs: 1000,
-    successRate: 0.5,
-    selectionDeadlineMs: null,
+    delayMs: 1200,
+    successRate: 0.35,
+    selectionDeadlineMs: 1000,
   },
   hard: {
-    delayMs: 700,
-    successRate: 0.25,
-    selectionDeadlineMs: 900,
+    delayMs: 900,
+    successRate: 0.12,
+    selectionDeadlineMs: 650,
+  },
+};
+
+export const SEAT_SELL_OUT_POLICY: Record<
+  PracticeDifficulty,
+  SeatSellOutPolicy
+> = {
+  easy: {
+    intervalMs: 1800,
+    minRemoveCount: 1,
+    maxRemoveCount: 2,
+  },
+  normal: {
+    intervalMs: 1100,
+    minRemoveCount: 1,
+    maxRemoveCount: 3,
+  },
+  hard: {
+    intervalMs: 900,
+    minRemoveCount: 1,
+    maxRemoveCount: 2,
   },
 };
 
@@ -139,6 +166,22 @@ export function sampleSeatIds(input: {
   }
 
   return shuffledSeatIds.slice(0, input.count);
+}
+
+export function getNextSoldOutSeatIds(input: {
+  difficulty: PracticeDifficulty;
+  remainingSeatIds: string[];
+}) {
+  const policy = SEAT_SELL_OUT_POLICY[input.difficulty];
+  const removeCount = Math.min(
+    getRandomInteger(policy.minRemoveCount, policy.maxRemoveCount),
+    input.remainingSeatIds.length,
+  );
+
+  return sampleSeatIds({
+    seatIds: input.remainingSeatIds,
+    count: removeCount,
+  });
 }
 
 export function shouldClaimSeatSucceed(input: {

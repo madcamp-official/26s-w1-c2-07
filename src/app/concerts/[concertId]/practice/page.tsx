@@ -86,6 +86,8 @@ export default async function PracticePage({ params }: PracticePageProps) {
                   rowLabel: true,
                   seatNumber: true,
                   status: true,
+                  x: true,
+                  y: true,
                 },
               },
             },
@@ -197,6 +199,9 @@ export default async function PracticePage({ params }: PracticePageProps) {
             rowLabel: seat.rowLabel,
             seatNumber: seat.seatNumber,
             status: seat.status,
+            zoneId: zone.id,
+            x: seat.x,
+            y: seat.y,
           })),
         }))}
       />

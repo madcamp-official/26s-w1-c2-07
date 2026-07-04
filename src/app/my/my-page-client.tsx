@@ -89,6 +89,7 @@ type MyPracticeSession = {
     seatNumber: number;
   } | null;
   elapsedMs: number;
+  startDelayMs: number;
   failReason: string | null;
   createdAt: string;
   completedAt: string | null;
@@ -585,8 +586,12 @@ function PracticeSessionList({
             </Button>
           </div>
 
-          <div className="mt-4 grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mt-4 grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-5">
             <InfoCell label="소요 시간" value={formatElapsed(session.elapsedMs)} />
+            <InfoCell
+              label="시작 반응"
+              value={formatElapsed(session.startDelayMs)}
+            />
             <InfoCell
               label="회차"
               value={

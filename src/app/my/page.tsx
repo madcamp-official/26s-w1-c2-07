@@ -118,6 +118,7 @@ export default async function MyPage() {
         selectedZone: session.selectedZone,
         selectedSeat: session.selectedSeat,
         elapsedMs: session.elapsedMs,
+        startDelayMs: session.startDelayMs,
         failReason: session.failReason,
         createdAt: session.createdAt.toISOString(),
         completedAt: session.completedAt?.toISOString() ?? null,

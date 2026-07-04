@@ -25,11 +25,11 @@ import {
 import {
   getInitialQueueCount,
   getNextQueueCount,
+  getNextSoldOutSeatIds,
   getSelectableSeatCount,
   QUEUE_POLICY,
   sampleSeatIds,
-  SEAT_CLAIM_POLICY,
-  shouldClaimSeatSucceed,
+  SEAT_SELL_OUT_POLICY,
 } from "@/lib/practice-simulation";
 import {
   getBboxCenter,
@@ -68,9 +68,19 @@ type ScheduleSummary = {
 
 type VirtualSeatSummary = {
   id: string;
+  zoneId: string;
   rowLabel: string;
   seatNumber: number;
   status: "available" | "sold" | "disabled";
+  x: number | null;
+  y: number | null;
+};
+
+type PositionedSeatSummary = VirtualSeatSummary & {
+  zoneName: string;
+  zoneGrade: string;
+  x: number;
+  y: number;
 };
 
 type SeatZoneSummary = {
@@ -99,7 +109,7 @@ type PracticeClientProps = {
   zones: SeatZoneSummary[];
 };
 
-type PracticePhase = "setup" | "running" | "result";
+type PracticePhase = "setup" | "countdown" | "running" | "result";
 
 type PracticeSessionResponse = {
   data?: {
@@ -107,6 +117,7 @@ type PracticeSessionResponse = {
       id: string;
       status: "started" | "success" | "failed";
       elapsedMs: number;
+      startDelayMs?: number | null;
       failReason?: string | null;
     };
   };
@@ -168,6 +179,29 @@ function getNextStep(steps: PracticeStep[], currentStepIndex: number) {
   return steps[currentStepIndex + 1] ?? "RESULT";
 }
 
+function getSoldOutToastMessage(difficulty: PracticeDifficulty) {
+  if (difficulty === "hard") {
+    return "이미 선택된 좌석입니다. 경쟁이 매우 치열합니다.";
+  }
+
+  if (difficulty === "normal") {
+    return "이미 선택된 좌석입니다. 다른 좌석을 선택해주세요.";
+  }
+
+  return "이미 선택된 좌석입니다.";
+}
+
+function isNormalizedCoordinate(
+  value: number | null | undefined,
+): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isFinite(value) &&
+    value >= 0 &&
+    value <= 1
+  );
+}
+
 export function PracticeClient({
   concert,
   schedules,
@@ -191,29 +225,35 @@ export function PracticeClient({
     schedules[0]?.id ?? null,
   );
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(
-    zones[0]?.id ?? null,
+    null,
   );
   const [selectedSeatId, setSelectedSeatId] = useState<string | null>(null);
-  const [selectedSeatAt, setSelectedSeatAt] = useState<number | null>(null);
+  const [seatSelectView, setSeatSelectView] = useState<"zone" | "seat">("zone");
   const [selectableSeatIds, setSelectableSeatIds] = useState<string[]>([]);
-  const [expiredSeatIds, setExpiredSeatIds] = useState<string[]>([]);
-  const [pendingSeatId, setPendingSeatId] = useState<string | null>(null);
+  const [soldOutSeatIds, setSoldOutSeatIds] = useState<string[]>([]);
   const [message, setMessage] = useState("");
   const [toastMessage, setToastMessage] = useState("");
   const [isStarting, setIsStarting] = useState(false);
+  const [startCountdown, setStartCountdown] = useState<number | null>(null);
+  const [isStartReady, setIsStartReady] = useState(false);
+  const [startReadyAt, setStartReadyAt] = useState<number | null>(null);
+  const [startDelayMs, setStartDelayMs] = useState<number | null>(null);
+  const [isStartRequestSent, setIsStartRequestSent] = useState(false);
   const [isCompleting, setIsCompleting] = useState(false);
   const [result, setResult] = useState<{
     status: "success" | "failed";
     elapsedMs: number;
+    startDelayMs: number;
     failReason?: string | null;
   } | null>(null);
   const completingRef = useRef(false);
-  const bookingAttemptTimerRef = useRef<number | null>(null);
+  const startClickTimerRef = useRef<number | null>(null);
   const toastTimerRef = useRef<number | null>(null);
 
   const steps = PRACTICE_TEMPLATE_STEPS[templateType];
   const currentStep = phase === "running" ? steps[currentStepIndex] : null;
-  const seatClaimPolicy = SEAT_CLAIM_POLICY[difficulty];
+  const isSplitSeatSelect = templateType === "nol_old";
+  const isDirectSeatMapSelect = templateType === "nol_new";
   const zonesWithGeometry = useMemo<SeatZoneWithGeometry[]>(
     () =>
       zones.map((zone) => {
@@ -244,9 +284,7 @@ export function PracticeClient({
   const selectedSchedule =
     schedules.find((schedule) => schedule.id === selectedScheduleId) ?? null;
   const selectedZone =
-    zonesWithGeometry.find((zone) => zone.id === selectedZoneId) ??
-    zonesWithGeometry[0] ??
-    null;
+    zonesWithGeometry.find((zone) => zone.id === selectedZoneId) ?? null;
   const selectedSeat =
     selectedZone?.virtualSeats.find((seat) => seat.id === selectedSeatId) ??
     null;
@@ -260,17 +298,16 @@ export function PracticeClient({
     [zones],
   );
   const remainingSelectableSeatIds = useMemo(
-    () =>
-      selectableSeatIds.filter((seatId) => !expiredSeatIds.includes(seatId)),
-    [expiredSeatIds, selectableSeatIds],
+    () => selectableSeatIds.filter((seatId) => !soldOutSeatIds.includes(seatId)),
+    [selectableSeatIds, soldOutSeatIds],
   );
   const remainingSelectableSeatIdSet = useMemo(
     () => new Set(remainingSelectableSeatIds),
     [remainingSelectableSeatIds],
   );
-  const expiredSeatIdSet = useMemo(
-    () => new Set(expiredSeatIds),
-    [expiredSeatIds],
+  const soldOutSeatIdSet = useMemo(
+    () => new Set(soldOutSeatIds),
+    [soldOutSeatIds],
   );
   const groupedSeats = useMemo(() => {
     if (!selectedZone) {
@@ -290,6 +327,68 @@ export function PracticeClient({
       seats,
     }));
   }, [selectedZone]);
+  const maxSeatsPerRow = groupedSeats.reduce(
+    (maxSeatCount, row) => Math.max(maxSeatCount, row.seats.length),
+    0,
+  );
+  const compactSeatSizePx = Math.max(
+    22,
+    Math.min(36, Math.floor(700 / Math.max(1, maxSeatsPerRow))),
+  );
+  const directSeatMapSeats = useMemo(
+    () =>
+      zones.flatMap((zone) => {
+        const bbox = parseBbox(zone.bbox);
+        const rowMap = new Map<string, VirtualSeatSummary[]>();
+
+        for (const seat of sortSeats(zone.virtualSeats)) {
+          const rowSeats = rowMap.get(seat.rowLabel) ?? [];
+          rowSeats.push(seat);
+          rowMap.set(seat.rowLabel, rowSeats);
+        }
+
+        const rows = Array.from(rowMap.entries()).map(([rowLabel, seats]) => ({
+          rowLabel,
+          seats,
+        }));
+
+        return rows.flatMap((row, rowIndex) =>
+          row.seats.flatMap((seat, seatIndex) => {
+            const fallbackX = bbox
+              ? bbox.x + bbox.width * ((seatIndex + 1) / (row.seats.length + 1))
+              : null;
+            const fallbackY = bbox
+              ? bbox.y + bbox.height * ((rowIndex + 1) / (rows.length + 1))
+              : null;
+            const x = isNormalizedCoordinate(seat.x) ? seat.x : fallbackX;
+            const y = isNormalizedCoordinate(seat.y) ? seat.y : fallbackY;
+
+            if (!isNormalizedCoordinate(x) || !isNormalizedCoordinate(y)) {
+              return [];
+            }
+
+            return [
+              {
+                ...seat,
+                zoneId: zone.id,
+                zoneName: zone.name,
+                zoneGrade: zone.grade,
+                x,
+                y,
+              } satisfies PositionedSeatSummary,
+            ];
+          }),
+        );
+      }),
+    [zones],
+  );
+  const directSeatMapAvailableSeatIds = useMemo(
+    () =>
+      directSeatMapSeats
+        .filter((seat) => seat.status === "available")
+        .map((seat) => seat.id),
+    [directSeatMapSeats],
+  );
   const queueProgressPercent =
     initialQueueCount > 0
       ? Math.min(
@@ -302,6 +401,8 @@ export function PracticeClient({
     async (input: {
       status: "success" | "failed";
       failReason?: string | null;
+      selectedZoneId?: string | null;
+      selectedSeatId?: string | null;
     }) => {
       if (!sessionId || !startedAt || completingRef.current) {
         return;
@@ -312,6 +413,8 @@ export function PracticeClient({
       setMessage("");
 
       const finalElapsedMs = Date.now() - startedAt;
+      const finalSelectedZoneId = input.selectedZoneId ?? selectedZoneId;
+      const finalSelectedSeatId = input.selectedSeatId ?? selectedSeatId;
 
       try {
         const response = await fetch(
@@ -325,9 +428,9 @@ export function PracticeClient({
               status: input.status,
               scheduleId: selectedScheduleId ?? undefined,
               selectedZoneId:
-                input.status === "success" ? selectedZoneId : null,
+                input.status === "success" ? finalSelectedZoneId : null,
               selectedSeatId:
-                input.status === "success" ? selectedSeatId : null,
+                input.status === "success" ? finalSelectedSeatId : null,
               elapsedMs: finalElapsedMs,
               failReason: input.failReason ?? null,
             }),
@@ -344,6 +447,7 @@ export function PracticeClient({
         setResult({
           status: input.status,
           elapsedMs: finalElapsedMs,
+          startDelayMs: startDelayMs ?? 0,
           failReason: input.failReason,
         });
         setCurrentStepIndex(steps.length - 1);
@@ -364,22 +468,23 @@ export function PracticeClient({
       selectedSeatId,
       selectedZoneId,
       sessionId,
+      startDelayMs,
       startedAt,
       steps.length,
     ],
   );
 
-  function clearBookingAttemptTimer() {
-    if (bookingAttemptTimerRef.current !== null) {
-      window.clearTimeout(bookingAttemptTimerRef.current);
-      bookingAttemptTimerRef.current = null;
-    }
-  }
-
   function clearToastTimer() {
     if (toastTimerRef.current !== null) {
       window.clearTimeout(toastTimerRef.current);
       toastTimerRef.current = null;
+    }
+  }
+
+  function clearStartClickTimer() {
+    if (startClickTimerRef.current !== null) {
+      window.clearTimeout(startClickTimerRef.current);
+      startClickTimerRef.current = null;
     }
   }
 
@@ -400,29 +505,24 @@ export function PracticeClient({
   }
 
   function initializeSeatSelectStep() {
-    clearBookingAttemptTimer();
-
+    const availableSeatIds =
+      isDirectSeatMapSelect && directSeatMapAvailableSeatIds.length > 0
+        ? directSeatMapAvailableSeatIds
+        : allAvailableSeatIds;
     const candidateCount = getSelectableSeatCount({
       difficulty,
-      totalAvailableSeats: allAvailableSeatIds.length,
+      totalAvailableSeats: availableSeatIds.length,
     });
     const candidateSeatIds = sampleSeatIds({
-      seatIds: allAvailableSeatIds,
+      seatIds: availableSeatIds,
       count: candidateCount,
     });
-    const firstCandidateZone = zones.find((zone) =>
-      zone.virtualSeats.some((seat) => candidateSeatIds.includes(seat.id)),
-    );
 
     setSelectableSeatIds(candidateSeatIds);
-    setExpiredSeatIds([]);
-    setPendingSeatId(null);
+    setSoldOutSeatIds([]);
     setSelectedSeatId(null);
-    setSelectedSeatAt(null);
-
-    if (firstCandidateZone) {
-      setSelectedZoneId(firstCandidateZone.id);
-    }
+    setSelectedZoneId(null);
+    setSeatSelectView("zone");
   }
 
   function prepareStep(step: PracticeStep) {
@@ -484,18 +584,123 @@ export function PracticeClient({
   }, [currentStep, phase, queueCount]);
 
   useEffect(() => {
+    if (phase !== "running" || currentStep !== "SEAT_SELECT") {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      setSoldOutSeatIds((currentSoldOutSeatIds) => {
+        const currentSoldOutSeatIdSet = new Set(currentSoldOutSeatIds);
+        const remainingSeatIds = selectableSeatIds.filter(
+          (seatId) => !currentSoldOutSeatIdSet.has(seatId),
+        );
+
+        if (remainingSeatIds.length === 0) {
+          return currentSoldOutSeatIds;
+        }
+
+        const nextSoldOutSeatIds = getNextSoldOutSeatIds({
+          difficulty,
+          remainingSeatIds,
+        });
+
+        return [...currentSoldOutSeatIds, ...nextSoldOutSeatIds];
+      });
+    }, SEAT_SELL_OUT_POLICY[difficulty].intervalMs);
+
+    return () => window.clearInterval(interval);
+  }, [currentStep, difficulty, phase, selectableSeatIds]);
+
+  useEffect(() => {
+    if (
+      phase !== "running" ||
+      currentStep !== "SEAT_SELECT" ||
+      selectableSeatIds.length === 0 ||
+      remainingSelectableSeatIds.length > 0 ||
+      completingRef.current
+    ) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      void completePractice({
+        status: "failed",
+        failReason: "선택 가능한 좌석이 모두 사라졌습니다.",
+      });
+    }, 0);
+
+    return () => window.clearTimeout(timeout);
+  }, [
+    completePractice,
+    currentStep,
+    phase,
+    remainingSelectableSeatIds.length,
+    selectableSeatIds.length,
+  ]);
+
+  useEffect(() => {
+    if (phase !== "countdown" || startCountdown === null) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      setStartCountdown((currentCountdown) => {
+        if (currentCountdown === null) {
+          return null;
+        }
+
+        if (currentCountdown <= 1) {
+          setIsStartReady(true);
+          setStartReadyAt(Date.now());
+          return null;
+        }
+
+        return currentCountdown - 1;
+      });
+    }, 1000);
+
+    return () => window.clearTimeout(timeout);
+  }, [phase, startCountdown]);
+
+  useEffect(() => {
     return () => {
-      clearBookingAttemptTimer();
+      clearStartClickTimer();
       clearToastTimer();
     };
   }, []);
 
-  async function handleStart() {
+  function resetStartGate() {
+    clearStartClickTimer();
+    setStartCountdown(null);
+    setIsStartReady(false);
+    setStartReadyAt(null);
+    setStartDelayMs(null);
+    setIsStarting(false);
+    setIsStartRequestSent(false);
+  }
+
+  function handleStartCountdown() {
+    setMessage("");
+    setToastMessage("");
+    setIsStartReady(false);
+    setStartReadyAt(null);
+    setStartDelayMs(null);
+    setIsStartRequestSent(false);
+    setStartCountdown(5);
+    setPhase("countdown");
+  }
+
+  async function startPractice(finalStartDelayMs: number) {
+    if (!isStartReady) {
+      handleStartCountdown();
+      return;
+    }
+
     setIsStarting(true);
+    setIsStartRequestSent(true);
     setMessage("");
     setToastMessage("");
     completingRef.current = false;
-    clearBookingAttemptTimer();
     clearToastTimer();
 
     try {
@@ -508,6 +713,7 @@ export function PracticeClient({
           concertId: concert.id,
           templateType,
           difficulty,
+          startDelayMs: finalStartDelayMs,
         }),
       });
       const payload = await readPracticeSessionResponse(response);
@@ -522,13 +728,12 @@ export function PracticeClient({
       setCurrentStepIndex(0);
       setStartedAt(Date.now());
       setElapsedMs(0);
+      setStartDelayMs(payload.data.practiceSession.startDelayMs ?? finalStartDelayMs);
       setCaptchaText(generatePracticeCaptcha());
       setCaptchaInput("");
       setSelectedSeatId(null);
-      setSelectedSeatAt(null);
       setSelectableSeatIds([]);
-      setExpiredSeatIds([]);
-      setPendingSeatId(null);
+      setSoldOutSeatIds([]);
       setResult(null);
       prepareStep(PRACTICE_TEMPLATE_STEPS[templateType][0]);
       setPhase("running");
@@ -540,7 +745,30 @@ export function PracticeClient({
       );
     } finally {
       setIsStarting(false);
+      setIsStartRequestSent(false);
     }
+  }
+
+  function handleStart() {
+    if (!isStartReady || !startReadyAt) {
+      handleStartCountdown();
+      return;
+    }
+
+    if (isStartRequestSent) {
+      return;
+    }
+
+    const nextStartDelayMs = Date.now() - startReadyAt;
+
+    setStartDelayMs(nextStartDelayMs);
+    setIsStarting(true);
+    setMessage("");
+    clearStartClickTimer();
+    startClickTimerRef.current = window.setTimeout(() => {
+      startClickTimerRef.current = null;
+      void startPractice(nextStartDelayMs);
+    }, 180);
   }
 
   function advanceStep() {
@@ -576,95 +804,40 @@ export function PracticeClient({
     advanceStep();
   }
 
-  function handleZoneSelect(zoneId: string) {
-    clearBookingAttemptTimer();
-    setSelectedZoneId(zoneId);
-    setSelectedSeatId(null);
-    setSelectedSeatAt(null);
-    setPendingSeatId(null);
-  }
-
-  function handleSeatConfirm() {
-    if (!selectedZoneId || !selectedSeatId) {
-      setMessage("좌석 구역과 좌석을 선택해주세요.");
-      return;
-    }
-
-    if (pendingSeatId) {
-      return;
-    }
-
-    const nextPendingSeatId = selectedSeatId;
-    const selectionElapsedMs = selectedSeatAt
-      ? Date.now() - selectedSeatAt
-      : Number.POSITIVE_INFINITY;
-
-    setPendingSeatId(nextPendingSeatId);
-    setMessage("예매 요청을 처리하는 중입니다.");
-
-    bookingAttemptTimerRef.current = window.setTimeout(() => {
-      bookingAttemptTimerRef.current = null;
-
-      if (
-        shouldClaimSeatSucceed({
-          difficulty,
-          selectionElapsedMs,
-        })
-      ) {
-        setPendingSeatId(null);
-        advanceStep();
-        return;
-      }
-
-      const failedSeatId = nextPendingSeatId;
-      setExpiredSeatIds((currentExpiredSeatIds) => {
-        const nextExpiredSeatIds = currentExpiredSeatIds.includes(failedSeatId)
-          ? currentExpiredSeatIds
-          : [...currentExpiredSeatIds, failedSeatId];
-        const remainingSeatIds = selectableSeatIds.filter(
-          (seatId) => !nextExpiredSeatIds.includes(seatId),
-        );
-
-        if (remainingSeatIds.length === 0) {
-          window.setTimeout(() => {
-            void completePractice({
-              status: "failed",
-              failReason: "선택 가능한 좌석이 모두 사라졌습니다.",
-            });
-          }, 0);
-        }
-
-        return nextExpiredSeatIds;
-      });
-      setSelectedSeatId(null);
-      setSelectedSeatAt(null);
-      setPendingSeatId(null);
-      showToast("이미 선택된 좌석입니다.");
-      setMessage(
-        seatClaimPolicy.selectionDeadlineMs !== null &&
-          selectionElapsedMs > seatClaimPolicy.selectionDeadlineMs
-          ? "예매 시도가 늦었습니다. 다른 좌석을 선택해 다시 시도해주세요."
-          : "다른 좌석을 선택해 예매를 다시 시도해주세요.",
-      );
-    }, seatClaimPolicy.delayMs);
-  }
-
   function handleSeatClick(seat: VirtualSeatSummary) {
-    if (!remainingSelectableSeatIdSet.has(seat.id) || pendingSeatId) {
+    if (seat.status !== "available") {
       return;
     }
 
-    clearBookingAttemptTimer();
+    if (!remainingSelectableSeatIdSet.has(seat.id)) {
+      showToast(getSoldOutToastMessage(difficulty));
+      return;
+    }
+
     setSelectedSeatId(seat.id);
-    setSelectedSeatAt(Date.now());
-    setPendingSeatId(null);
-    setMessage("좌석을 선택했습니다. 예매 시도 버튼을 눌러 결과를 확인하세요.");
+    setSelectedZoneId(seat.zoneId);
+    setMessage("좌석을 선택했습니다. 연습을 완료합니다.");
+    void completePractice({
+      status: "success",
+      selectedZoneId: seat.zoneId,
+      selectedSeatId: seat.id,
+    });
+  }
+
+  function handleZoneSelect(zone: { id: string; name: string }) {
+    setSelectedZoneId(zone.id);
+    setSelectedSeatId(null);
+    setMessage(`${zone.name} 구역을 선택했습니다. 남아있는 좌석을 선택하세요.`);
+
+    if (isSplitSeatSelect) {
+      setSeatSelectView("seat");
+    }
   }
 
   function handleRestart() {
-    clearBookingAttemptTimer();
     clearToastTimer();
     setPhase("setup");
+    resetStartGate();
     setSessionId(null);
     setCurrentStepIndex(0);
     setStartedAt(null);
@@ -674,10 +847,9 @@ export function PracticeClient({
     setInitialQueueCount(0);
     setQueueCount(0);
     setSelectedSeatId(null);
-    setSelectedSeatAt(null);
+    setSeatSelectView("zone");
     setSelectableSeatIds([]);
-    setExpiredSeatIds([]);
-    setPendingSeatId(null);
+    setSoldOutSeatIds([]);
     setMessage("");
     setToastMessage("");
     setResult(null);
@@ -722,7 +894,10 @@ export function PracticeClient({
                         ? "border-primary bg-primary/5"
                         : "bg-background hover:border-primary/60",
                     ].join(" ")}
-                    onClick={() => setTemplateType(type)}
+                    onClick={() => {
+                      setTemplateType(type);
+                      resetStartGate();
+                    }}
                   >
                     <span className="text-xs text-muted-foreground">
                       {index + 1}
@@ -745,7 +920,7 @@ export function PracticeClient({
               <h2 className="text-lg font-semibold">난이도</h2>
               <p className="mt-2 text-sm text-muted-foreground">
                 난이도가 높을수록 대기 인원이 많고, 선택 가능한 좌석 후보가
-                줄어들며, 예매 성공률이 낮아집니다.
+                줄어들며, 좌석 매진 속도가 빨라집니다.
               </p>
               <div className="mt-3 grid gap-2 sm:grid-cols-3">
                 {PRACTICE_DIFFICULTIES.map((item) => (
@@ -760,6 +935,7 @@ export function PracticeClient({
                     ].join(" ")}
                     onClick={() => {
                       setDifficulty(item);
+                      resetStartGate();
                     }}
                   >
                     <span className="font-medium">
@@ -770,14 +946,58 @@ export function PracticeClient({
               </div>
             </section>
 
-            <Button onClick={handleStart} disabled={isStarting}>
-              {isStarting ? (
-                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-              ) : (
-                <Ticket className="h-4 w-4" aria-hidden="true" />
-              )}
+            <Button onClick={handleStartCountdown}>
+              <Ticket className="h-4 w-4" aria-hidden="true" />
               연습 시작
             </Button>
+          </div>
+        ) : null}
+
+        {phase === "countdown" ? (
+          <div className="mt-6 flex min-h-[360px] flex-col items-center justify-center rounded-md border bg-secondary px-6 py-10 text-center">
+            <div className="flex h-14 w-14 items-center justify-center rounded-md border bg-background">
+              <TimerReset className="h-6 w-6" aria-hidden="true" />
+            </div>
+            <p className="mt-5 text-sm text-muted-foreground">
+              {PRACTICE_TEMPLATE_LABELS[templateType]} ·{" "}
+              {PRACTICE_DIFFICULTY_LABELS[difficulty]}
+            </p>
+            <h2 className="mt-2 text-2xl font-semibold">연습 시작 준비</h2>
+            <div className="mt-8 flex h-28 w-28 items-center justify-center rounded-full border bg-background text-5xl font-semibold">
+              {startCountdown ?? 0}
+            </div>
+            <div className="mt-8 flex flex-wrap justify-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  resetStartGate();
+                  setPhase("setup");
+                }}
+                disabled={isStarting}
+              >
+                설정 다시 선택
+              </Button>
+              <Button
+                onClick={handleStart}
+                disabled={!isStartReady || isStartRequestSent}
+              >
+                {isStarting ? (
+                  <Loader2
+                    className="h-4 w-4 animate-spin"
+                    aria-hidden="true"
+                  />
+                ) : (
+                  <Ticket className="h-4 w-4" aria-hidden="true" />
+                )}
+                {isStarting ? "마지막 클릭 반영 중" : "연습 시작"}
+              </Button>
+            </div>
+            {startDelayMs !== null ? (
+              <p className="mt-4 text-sm text-muted-foreground">
+                시작 버튼 반응 시간 {(startDelayMs / 1000).toFixed(1)}초
+              </p>
+            ) : null}
           </div>
         ) : null}
 
@@ -924,269 +1144,428 @@ export function PracticeClient({
                   <div>
                     <h2 className="font-semibold">좌석 선택</h2>
                     <p className="mt-1 text-sm text-muted-foreground">
-                      좌석 배치도에서 구역을 선택한 뒤 연습용 가상 좌석을
-                      선택합니다.
+                      {isDirectSeatMapSelect
+                        ? "구역 선택 없이 배치도 위 원형 좌석을 바로 선택합니다."
+                        : isSplitSeatSelect && seatSelectView === "seat"
+                          ? "선택한 구역의 남아있는 좌석을 선택합니다."
+                          : "먼저 배치도에서 구역을 선택한 뒤 남아있는 좌석을 선택합니다."}
                     </p>
                   </div>
                 </div>
-                <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
-                  <div className="space-y-3">
-                    <div className="overflow-hidden rounded-md border bg-secondary">
-                      <div className="relative">
-                        {/* Keep the rendered bitmap and zone overlay in the same coordinate space. */}
+
+                {isDirectSeatMapSelect ? (
+                  <div className="mt-5 rounded-md border bg-secondary p-3">
+                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                      <span>
+                        선택 가능 좌석 {remainingSelectableSeatIds.length}석 /{" "}
+                        후보 {selectableSeatIds.length}석
+                      </span>
+                      <span>좌석은 배치도 위치에 맞춰 원형으로 표시됩니다.</span>
+                    </div>
+
+                    {directSeatMapSeats.length > 0 ? (
+                      <div className="relative overflow-hidden rounded-md border bg-background">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
                           src={seatMap.imageUrl}
                           alt="좌석 배치도"
-                          className="block h-auto w-full"
+                          className="block w-full select-none"
+                          draggable={false}
                         />
-                        <svg
-                          className="absolute inset-0 h-full w-full"
-                          viewBox="0 0 100 100"
-                          preserveAspectRatio="none"
-                          aria-label="좌석 구역 선택"
-                        >
-                          {zoneOverlays.map((zone) => {
-                            const isSelected = selectedZone?.id === zone.id;
-                            const needsGeometryReview = !zone.polygon;
-                            const zoneLabel = `${zone.name} ${zone.grade}`;
+                        {directSeatMapSeats.map((seat) => {
+                          const isSelected = selectedSeatId === seat.id;
+                          const isCandidate = remainingSelectableSeatIdSet.has(
+                            seat.id,
+                          );
+                          const isSoldOut = soldOutSeatIdSet.has(seat.id);
+                          const isSelectable =
+                            seat.status === "available" && !isCompleting;
 
-                            return (
-                              <g
-                                key={zone.id}
-                                className={[
-                                  "cursor-pointer transition",
-                                  isSelected && !needsGeometryReview
-                                    ? "fill-primary/25 stroke-primary"
-                                    : isSelected && needsGeometryReview
-                                      ? "fill-amber-400/25 stroke-amber-600"
-                                      : needsGeometryReview
-                                        ? "fill-amber-400/15 stroke-amber-500 hover:fill-amber-400/25"
-                                        : "fill-emerald-400/15 stroke-emerald-500 hover:fill-emerald-400/25",
-                                ].join(" ")}
-                                role="button"
-                                tabIndex={0}
-                                aria-label={zoneLabel}
-                                onClick={() => handleZoneSelect(zone.id)}
-                                onKeyDown={(event) => {
-                                  if (
-                                    event.key === "Enter" ||
-                                    event.key === " "
-                                  ) {
-                                    event.preventDefault();
-                                    handleZoneSelect(zone.id);
-                                  }
-                                }}
-                              >
-                                <title>{zoneLabel}</title>
-                                {zone.polygon ? (
-                                  <polygon
-                                    points={getPolygonPointsAttribute(
-                                      zone.polygon,
-                                    )}
-                                    strokeWidth={isSelected ? 0.9 : 0.6}
-                                    vectorEffect="non-scaling-stroke"
-                                  />
-                                ) : zone.bbox ? (
-                                  <rect
-                                    x={zone.bbox.x * 100}
-                                    y={zone.bbox.y * 100}
-                                    width={zone.bbox.width * 100}
-                                    height={zone.bbox.height * 100}
-                                    strokeWidth={isSelected ? 0.9 : 0.6}
-                                    vectorEffect="non-scaling-stroke"
-                                  />
-                                ) : null}
-                              </g>
-                            );
-                          })}
-                        </svg>
-                        {zoneOverlays.map((zone) =>
-                          zone.labelPoint ? (
+                          return (
                             <button
-                              key={`${zone.id}-label`}
+                              key={seat.id}
                               type="button"
-                              title={
-                                zone.polygon
-                                  ? `${zone.name} ${zone.grade}`
-                                  : `${zone.name} ${zone.grade} - 외곽선 확인 필요`
-                              }
                               className={[
-                                "absolute z-10 max-w-36 rounded-md border bg-background/95 px-2 py-1 text-left text-[11px] font-medium shadow-sm transition",
-                                selectedZone?.id === zone.id && zone.polygon
-                                  ? "border-primary text-primary"
-                                  : selectedZone?.id === zone.id
-                                    ? "border-amber-600 text-amber-700"
-                                    : !zone.polygon
-                                      ? "border-amber-400 text-amber-700 hover:border-amber-600"
-                                      : "hover:border-primary/60",
+                                "absolute h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border text-[0px] shadow-sm transition sm:h-4 sm:w-4",
+                                isSelected
+                                  ? "z-20 border-primary bg-primary"
+                                  : "",
+                                !isSelected && isCandidate
+                                  ? "z-10 border-emerald-700 bg-emerald-400 hover:scale-125 hover:border-primary hover:bg-primary"
+                                  : "",
+                                !isSelected && !isCandidate
+                                  ? "border-muted-foreground/30 bg-muted-foreground/30 opacity-40"
+                                  : "",
+                                isSoldOut
+                                  ? "border-destructive/40 bg-destructive/40 opacity-30"
+                                  : "",
                               ].join(" ")}
                               style={{
-                                left: `${zone.labelPoint.x * 100}%`,
-                                top: `${zone.labelPoint.y * 100}%`,
-                                transform: "translate(-50%, -50%)",
+                                left: `${seat.x * 100}%`,
+                                top: `${seat.y * 100}%`,
                               }}
-                              onClick={() => handleZoneSelect(zone.id)}
+                              title={`${seat.zoneName} · ${seat.rowLabel} ${seat.seatNumber}번`}
+                              aria-label={`${seat.zoneName} ${seat.rowLabel} ${seat.seatNumber}번 좌석`}
+                              disabled={!isSelectable}
+                              onClick={() => handleSeatClick(seat)}
                             >
-                              <span className="block truncate">
-                                {zone.name}
-                              </span>
-                              <span className="block truncate text-muted-foreground">
-                                {zone.grade}
-                              </span>
-                              {!zone.polygon ? (
-                                <span className="block truncate text-amber-700">
-                                  확인 필요
-                                </span>
-                              ) : null}
+                              {seat.seatNumber}
                             </button>
-                          ) : null,
-                        )}
+                          );
+                        })}
                       </div>
-                    </div>
-
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      {zonesWithGeometry.map((zone) => (
-                        <button
-                          key={zone.id}
-                          type="button"
-                          className={[
-                            "rounded-md border px-3 py-2 text-left text-sm transition",
-                            selectedZoneId === zone.id
-                              ? "border-primary bg-primary/5"
-                              : "bg-background hover:border-primary/60",
-                          ].join(" ")}
-                          onClick={() => handleZoneSelect(zone.id)}
-                        >
-                          <span className="font-medium">
-                            {zone.name} · {zone.grade}
-                          </span>
-                          <span className="mt-1 block text-xs text-muted-foreground">
-                            남은 후보{" "}
-                            {
-                              zone.virtualSeats.filter((seat) =>
-                                remainingSelectableSeatIdSet.has(seat.id),
-                              ).length
-                            }
-                            석 / 전체 {zone.virtualSeats.length}석
-                          </span>
-                          {!zone.polygon ? (
-                            <span className="mt-1 block text-xs text-amber-700">
-                              외곽선 확인 필요
-                            </span>
-                          ) : null}
-                        </button>
-                      ))}
-                    </div>
+                    ) : (
+                      <p className="rounded-md border bg-background px-4 py-6 text-center text-sm text-muted-foreground">
+                        배치도 좌표가 있는 좌석이 없습니다. 좌석 데이터를 다시
+                        생성해주세요.
+                      </p>
+                    )}
                   </div>
-
-                  <div className="rounded-md border bg-secondary p-3">
-                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-                      <span>
-                        선택 가능 후보 {remainingSelectableSeatIds.length}석 /{" "}
-                        최초 {selectableSeatIds.length}석
-                      </span>
-                      <span>
-                        예매 요청 처리{" "}
-                        {(seatClaimPolicy.delayMs / 1000).toFixed(1)}초
-                      </span>
-                      {seatClaimPolicy.selectionDeadlineMs !== null ? (
-                        <span>
-                          선택 후{" "}
-                          {(seatClaimPolicy.selectionDeadlineMs / 1000).toFixed(
-                            1,
-                          )}
-                          초 내 예매 시도
-                        </span>
-                      ) : null}
+                ) : isSplitSeatSelect && seatSelectView === "seat" ? (
+                  <div className="mt-5 rounded-md border bg-secondary p-4">
+                    <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                      <div className="text-sm">
+                        <p className="font-medium">
+                          {selectedZone
+                            ? `${selectedZone.name} · ${selectedZone.grade}`
+                            : "구역 미선택"}
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          남아있는 좌석을 선택하면 연습이 완료됩니다.
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setSeatSelectView("zone");
+                          setSelectedSeatId(null);
+                          setMessage("배치도에서 구역을 다시 선택하세요.");
+                        }}
+                        disabled={isCompleting}
+                      >
+                        구역 다시 선택
+                      </Button>
                     </div>
 
-                    {groupedSeats.length > 0 ? (
-                      <div className="max-h-96 overflow-auto">
-                        <div className="grid min-w-max gap-2">
+                    {!selectedZone ? (
+                      <p className="rounded-md border bg-background px-4 py-6 text-center text-sm text-muted-foreground">
+                        이전 페이지에서 구역을 먼저 선택하세요.
+                      </p>
+                    ) : groupedSeats.length > 0 ? (
+                      <div className="rounded-md border bg-background p-3">
+                        <div className="grid gap-1.5">
                           {groupedSeats.map((row) => (
                             <div
                               key={row.rowLabel}
-                              className="flex items-center gap-2"
+                              className="grid items-center gap-1.5"
+                              style={{
+                                gridTemplateColumns: `2.5rem repeat(${maxSeatsPerRow}, minmax(0, 1fr))`,
+                              }}
                             >
-                              <span className="w-10 shrink-0 text-xs text-muted-foreground">
+                              <span className="text-xs text-muted-foreground">
                                 {row.rowLabel}
                               </span>
-                              <div className="flex gap-1.5">
-                                {row.seats.map((seat) => {
-                                  const isSelected =
-                                    selectedSeatId === seat.id;
-                                  const isPending =
-                                    pendingSeatId === seat.id;
-                                  const isExpired = expiredSeatIdSet.has(
-                                    seat.id,
-                                  );
-                                  const isCandidate =
-                                    remainingSelectableSeatIdSet.has(seat.id);
-                                  const isSelectable =
-                                    seat.status === "available" &&
-                                    isCandidate &&
-                                    !isExpired &&
-                                    pendingSeatId === null;
+                              {row.seats.map((seat) => {
+                                const isSelected = selectedSeatId === seat.id;
+                                const isCandidate =
+                                  remainingSelectableSeatIdSet.has(seat.id);
+                                const isSoldOut = soldOutSeatIdSet.has(seat.id);
+                                const isSelectable =
+                                  seat.status === "available" &&
+                                  !isCompleting;
 
-                                  return (
-                                    <button
-                                      key={seat.id}
-                                      type="button"
-                                      className={[
-                                        "h-8 w-8 shrink-0 rounded-md border bg-background text-xs font-medium transition",
-                                        isSelected
-                                          ? "border-primary bg-primary text-primary-foreground"
-                                          : "",
-                                        !isSelected && isCandidate
-                                          ? "border-emerald-500 bg-emerald-50 text-emerald-900 hover:border-primary"
-                                          : "",
-                                        isPending
-                                          ? "border-primary bg-primary/10 text-primary"
-                                          : "",
-                                        !isCandidate || isExpired
-                                          ? "cursor-not-allowed opacity-35"
-                                          : "",
-                                      ].join(" ")}
-                                      title={
-                                        isExpired
+                                return (
+                                  <button
+                                    key={seat.id}
+                                    type="button"
+                                    className={[
+                                      "aspect-square rounded-sm border bg-background text-[10px] font-medium transition",
+                                      isSelected
+                                        ? "border-primary bg-primary text-primary-foreground"
+                                        : "",
+                                      !isSelected && isCandidate
+                                        ? "border-emerald-500 bg-emerald-50 text-emerald-900 hover:border-primary"
+                                        : "",
+                                      !isCandidate
+                                        ? "opacity-35"
+                                        : "",
+                                    ].join(" ")}
+                                    style={{
+                                      maxWidth: `${compactSeatSizePx}px`,
+                                      maxHeight: `${compactSeatSizePx}px`,
+                                    }}
+                                    title={
+                                      isCandidate
+                                        ? "선택 가능한 남은 좌석"
+                                        : isSoldOut
                                           ? "이미 선택된 좌석입니다."
-                                          : isCandidate
-                                            ? "선택 가능 후보 좌석"
-                                            : "이번 연습에서는 선택할 수 없는 좌석"
-                                      }
-                                      disabled={!isSelectable}
-                                      onClick={() => handleSeatClick(seat)}
-                                    >
-                                      {isPending ? "…" : seat.seatNumber}
-                                    </button>
-                                  );
-                                })}
-                              </div>
+                                          : "선택할 수 없는 좌석"
+                                    }
+                                    disabled={!isSelectable}
+                                    onClick={() => handleSeatClick(seat)}
+                                  >
+                                    {seat.seatNumber}
+                                  </button>
+                                );
+                              })}
                             </div>
                           ))}
                         </div>
                       </div>
                     ) : (
-                      <p className="text-sm text-muted-foreground">
+                      <p className="rounded-md border bg-background px-4 py-6 text-center text-sm text-muted-foreground">
                         선택한 구역에 생성된 가상 좌석이 없습니다.
                       </p>
                     )}
                   </div>
-                </div>
-                <Button
-                  className="mt-5"
-                  onClick={handleSeatConfirm}
-                  disabled={isCompleting || !selectedSeatId || Boolean(pendingSeatId)}
-                >
-                  {isCompleting ? (
-                    <Loader2
-                      className="h-4 w-4 animate-spin"
-                      aria-hidden="true"
-                    />
-                  ) : null}
-                  예매 시도
-                </Button>
+                ) : (
+                  <div
+                    className={[
+                      "mt-5 grid gap-4",
+                      isSplitSeatSelect
+                        ? "xl:grid-cols-1"
+                        : "xl:grid-cols-[minmax(0,1fr)_380px]",
+                    ].join(" ")}
+                  >
+                    <div className="space-y-3">
+                      <div className="overflow-hidden rounded-md border bg-secondary">
+                        <div className="relative">
+                          {/* Keep the rendered bitmap and zone overlay in the same coordinate space. */}
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={seatMap.imageUrl}
+                            alt="좌석 배치도"
+                            className="block h-auto w-full"
+                          />
+                          <svg
+                            className="absolute inset-0 h-full w-full"
+                            viewBox="0 0 100 100"
+                            preserveAspectRatio="none"
+                            aria-label="좌석 구역 선택"
+                          >
+                            {zoneOverlays.map((zone) => {
+                              const isSelected = selectedZone?.id === zone.id;
+                              const needsGeometryReview = !zone.polygon;
+                              const zoneLabel = `${zone.name} ${zone.grade}`;
+
+                              return (
+                                <g
+                                  key={zone.id}
+                                  className={[
+                                    "cursor-pointer transition",
+                                    isSelected && !needsGeometryReview
+                                      ? "fill-primary/25 stroke-primary"
+                                      : isSelected && needsGeometryReview
+                                        ? "fill-amber-400/25 stroke-amber-600"
+                                        : needsGeometryReview
+                                          ? "fill-amber-400/15 stroke-amber-500 hover:fill-amber-400/25"
+                                          : "fill-emerald-400/15 stroke-emerald-500 hover:fill-emerald-400/25",
+                                  ].join(" ")}
+                                  role="button"
+                                  tabIndex={0}
+                                  aria-label={zoneLabel}
+                                  onClick={() => handleZoneSelect(zone)}
+                                  onKeyDown={(event) => {
+                                    if (
+                                      event.key === "Enter" ||
+                                      event.key === " "
+                                    ) {
+                                      event.preventDefault();
+                                      handleZoneSelect(zone);
+                                    }
+                                  }}
+                                >
+                                  <title>{zoneLabel}</title>
+                                  {zone.polygon ? (
+                                    <polygon
+                                      points={getPolygonPointsAttribute(
+                                        zone.polygon,
+                                      )}
+                                      strokeWidth={isSelected ? 0.9 : 0.6}
+                                      vectorEffect="non-scaling-stroke"
+                                    />
+                                  ) : zone.bbox ? (
+                                    <rect
+                                      x={zone.bbox.x * 100}
+                                      y={zone.bbox.y * 100}
+                                      width={zone.bbox.width * 100}
+                                      height={zone.bbox.height * 100}
+                                      strokeWidth={isSelected ? 0.9 : 0.6}
+                                      vectorEffect="non-scaling-stroke"
+                                    />
+                                  ) : null}
+                                </g>
+                              );
+                            })}
+                          </svg>
+                          {zoneOverlays.map((zone) =>
+                            zone.labelPoint ? (
+                              <button
+                                key={`${zone.id}-label`}
+                                type="button"
+                                title={
+                                  zone.polygon
+                                    ? `${zone.name} ${zone.grade}`
+                                    : `${zone.name} ${zone.grade} - 외곽선 확인 필요`
+                                }
+                                className={[
+                                  "absolute z-10 max-w-36 rounded-md border bg-background/95 px-2 py-1 text-left text-[11px] font-medium shadow-sm transition",
+                                  selectedZone?.id === zone.id && zone.polygon
+                                    ? "border-primary text-primary"
+                                    : selectedZone?.id === zone.id
+                                      ? "border-amber-600 text-amber-700"
+                                      : !zone.polygon
+                                        ? "border-amber-400 text-amber-700 hover:border-amber-600"
+                                        : "hover:border-primary/60",
+                                ].join(" ")}
+                                style={{
+                                  left: `${zone.labelPoint.x * 100}%`,
+                                  top: `${zone.labelPoint.y * 100}%`,
+                                  transform: "translate(-50%, -50%)",
+                                }}
+                                onClick={() => handleZoneSelect(zone)}
+                              >
+                                <span className="block truncate">
+                                  {zone.name}
+                                </span>
+                                <span className="block truncate text-muted-foreground">
+                                  {zone.grade}
+                                </span>
+                                {!zone.polygon ? (
+                                  <span className="block truncate text-amber-700">
+                                    확인 필요
+                                  </span>
+                                ) : null}
+                              </button>
+                            ) : null,
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {zonesWithGeometry.map((zone) => (
+                          <button
+                            key={zone.id}
+                            type="button"
+                            className={[
+                              "rounded-md border bg-background px-3 py-2 text-left text-sm transition",
+                              selectedZoneId === zone.id
+                                ? "border-primary bg-primary/5"
+                                : "hover:border-primary/60",
+                            ].join(" ")}
+                            onClick={() => handleZoneSelect(zone)}
+                          >
+                            <span className="font-medium">
+                              {zone.name} · {zone.grade}
+                            </span>
+                            <span className="mt-1 block text-xs text-muted-foreground">
+                              남은 좌석{" "}
+                              {
+                                zone.virtualSeats.filter((seat) =>
+                                  remainingSelectableSeatIdSet.has(seat.id),
+                                ).length
+                              }
+                              석 / 전체 {zone.virtualSeats.length}석
+                            </span>
+                            {!zone.polygon ? (
+                              <span className="mt-1 block text-xs text-amber-700">
+                                외곽선 확인 필요
+                              </span>
+                            ) : null}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {!isSplitSeatSelect ? (
+                      <div className="rounded-md border bg-secondary p-3">
+                        <div className="mb-3 text-xs text-muted-foreground">
+                          <p>
+                            전체 남은 좌석 {remainingSelectableSeatIds.length}석 /{" "}
+                            전체 {selectableSeatIds.length}석
+                          </p>
+                          {selectedZone ? (
+                            <p className="mt-1">
+                              선택 구역: {selectedZone.name} ·{" "}
+                              {selectedZone.grade}
+                            </p>
+                          ) : null}
+                        </div>
+
+                        {!selectedZone ? (
+                          <p className="rounded-md border bg-background px-4 py-6 text-center text-sm text-muted-foreground">
+                            배치도에서 구역을 먼저 선택하세요.
+                          </p>
+                        ) : groupedSeats.length > 0 ? (
+                          <div className="max-h-96 overflow-auto">
+                            <div className="grid min-w-max gap-2">
+                              {groupedSeats.map((row) => (
+                                <div
+                                  key={row.rowLabel}
+                                  className="flex items-center gap-2"
+                                >
+                                  <span className="w-10 shrink-0 text-xs text-muted-foreground">
+                                    {row.rowLabel}
+                                  </span>
+                                  <div className="flex gap-1.5">
+                                    {row.seats.map((seat) => {
+                                      const isSelected =
+                                        selectedSeatId === seat.id;
+                                      const isCandidate =
+                                        remainingSelectableSeatIdSet.has(
+                                          seat.id,
+                                        );
+                                      const isSoldOut = soldOutSeatIdSet.has(
+                                        seat.id,
+                                      );
+                                      const isSelectable =
+                                        seat.status === "available" &&
+                                        !isCompleting;
+
+                                      return (
+                                        <button
+                                          key={seat.id}
+                                          type="button"
+                                          className={[
+                                            "h-8 w-8 shrink-0 rounded-md border bg-background text-xs font-medium transition",
+                                            isSelected
+                                              ? "border-primary bg-primary text-primary-foreground"
+                                              : "",
+                                            !isSelected && isCandidate
+                                              ? "border-emerald-500 bg-emerald-50 text-emerald-900 hover:border-primary"
+                                              : "",
+                                            !isCandidate ? "opacity-35" : "",
+                                          ].join(" ")}
+                                          title={
+                                            isCandidate
+                                              ? "선택 가능한 남은 좌석"
+                                              : isSoldOut
+                                                ? "이미 선택된 좌석입니다."
+                                                : "선택할 수 없는 좌석"
+                                          }
+                                          disabled={!isSelectable}
+                                          onClick={() => handleSeatClick(seat)}
+                                        >
+                                          {seat.seatNumber}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="rounded-md border bg-background px-4 py-6 text-center text-sm text-muted-foreground">
+                            선택한 구역에 생성된 가상 좌석이 없습니다.
+                          </p>
+                        )}
+                      </div>
+                    ) : null}
+                  </div>
+                )}
               </section>
             ) : null}
           </div>
@@ -1206,6 +1585,9 @@ export function PracticeClient({
                 </h2>
                 <p className="mt-1 text-sm text-muted-foreground">
                   소요 시간 {(result.elapsedMs / 1000).toFixed(1)}초
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  시작 버튼 반응 시간 {(result.startDelayMs / 1000).toFixed(1)}초
                 </p>
               </div>
             </div>
