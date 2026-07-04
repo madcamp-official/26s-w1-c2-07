@@ -21,6 +21,14 @@ export async function GET() {
           venueName: true,
         },
       },
+      schedule: {
+        select: {
+          id: true,
+          performanceDate: true,
+          roundName: true,
+          startTime: true,
+        },
+      },
       selectedZone: {
         select: {
           id: true,
@@ -45,4 +53,3 @@ export async function GET() {
     practiceSessions,
   });
 }
-

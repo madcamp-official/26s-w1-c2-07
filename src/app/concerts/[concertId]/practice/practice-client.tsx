@@ -31,7 +31,16 @@ import {
   sampleSeatIds,
   SEAT_SELL_OUT_POLICY,
 } from "@/lib/practice-simulation";
-import { parseBbox, type BoundingBox } from "@/lib/seat-zone-geometry";
+import {
+  getBboxCenter,
+  getPolygonCenter,
+  getPolygonPointsAttribute,
+  isBboxCornerPolygon,
+  parseBbox,
+  parsePolygon,
+  type BoundingBox,
+  type Point,
+} from "@/lib/seat-zone-geometry";
 import type {
   PracticeDifficulty,
   PracticeStep,
@@ -80,13 +89,21 @@ type SeatZoneSummary = {
   grade: string;
   price: number | null;
   bbox: unknown;
+  polygon: unknown;
   virtualSeats: VirtualSeatSummary[];
+};
+
+type SeatZoneWithGeometry = Omit<SeatZoneSummary, "bbox" | "polygon"> & {
+  bbox: BoundingBox | null;
+  polygon: Point[] | null;
+  labelPoint: Point | null;
 };
 
 type PracticeClientProps = {
   concert: ConcertSummary;
   schedules: ScheduleSummary[];
   seatMap: {
+    id: string;
     imageUrl: string;
   };
   zones: SeatZoneSummary[];
@@ -237,10 +254,37 @@ export function PracticeClient({
   const currentStep = phase === "running" ? steps[currentStepIndex] : null;
   const isSplitSeatSelect = templateType === "nol_old";
   const isDirectSeatMapSelect = templateType === "nol_new";
+  const zonesWithGeometry = useMemo<SeatZoneWithGeometry[]>(
+    () =>
+      zones.map((zone) => {
+        const bbox = parseBbox(zone.bbox);
+        const parsedPolygon = parsePolygon(zone.polygon);
+        const polygon =
+          parsedPolygon && (!bbox || !isBboxCornerPolygon(parsedPolygon, bbox))
+            ? parsedPolygon
+            : null;
+
+        return {
+          ...zone,
+          bbox,
+          polygon,
+          labelPoint: polygon
+            ? getPolygonCenter(polygon)
+            : bbox
+              ? getBboxCenter(bbox)
+              : null,
+        };
+      }),
+    [zones],
+  );
+  const zoneOverlays = useMemo(
+    () => zonesWithGeometry.filter((zone) => zone.polygon || zone.bbox),
+    [zonesWithGeometry],
+  );
   const selectedSchedule =
     schedules.find((schedule) => schedule.id === selectedScheduleId) ?? null;
   const selectedZone =
-    zones.find((zone) => zone.id === selectedZoneId) ?? null;
+    zonesWithGeometry.find((zone) => zone.id === selectedZoneId) ?? null;
   const selectedSeat =
     selectedZone?.virtualSeats.find((seat) => seat.id === selectedSeatId) ??
     null;
@@ -290,19 +334,6 @@ export function PracticeClient({
   const compactSeatSizePx = Math.max(
     22,
     Math.min(36, Math.floor(700 / Math.max(1, maxSeatsPerRow))),
-  );
-  const zonesWithBbox = useMemo(
-    () =>
-      zones
-        .map((zone) => ({
-          ...zone,
-          bbox: parseBbox(zone.bbox),
-        }))
-        .filter(
-          (zone): zone is SeatZoneSummary & { bbox: BoundingBox } =>
-            Boolean(zone.bbox),
-        ),
-    [zones],
   );
   const directSeatMapSeats = useMemo(
     () =>
@@ -793,7 +824,7 @@ export function PracticeClient({
     });
   }
 
-  function handleZoneSelect(zone: SeatZoneSummary) {
+  function handleZoneSelect(zone: { id: string; name: string }) {
     setSelectedZoneId(zone.id);
     setSelectedSeatId(null);
     setMessage(`${zone.name} 구역을 선택했습니다. 남아있는 좌석을 선택하세요.`);
@@ -1294,168 +1325,245 @@ export function PracticeClient({
                     className={[
                       "mt-5 grid gap-4",
                       isSplitSeatSelect
-                        ? "lg:grid-cols-1"
-                        : "lg:grid-cols-[minmax(0,1fr)_300px]",
+                        ? "xl:grid-cols-1"
+                        : "xl:grid-cols-[minmax(0,1fr)_380px]",
                     ].join(" ")}
                   >
-                    <div className="rounded-md border bg-secondary p-3">
-                    <div className="relative overflow-hidden rounded-md border bg-background">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={seatMap.imageUrl}
-                        alt="좌석 배치도"
-                        className="block w-full select-none"
-                        draggable={false}
-                      />
-                      {zonesWithBbox.map((zone) => {
-                        const remainingCount = zone.virtualSeats.filter((seat) =>
-                          remainingSelectableSeatIdSet.has(seat.id),
-                        ).length;
+                    <div className="space-y-3">
+                      <div className="overflow-hidden rounded-md border bg-secondary">
+                        <div className="relative">
+                          {/* Keep the rendered bitmap and zone overlay in the same coordinate space. */}
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={seatMap.imageUrl}
+                            alt="좌석 배치도"
+                            className="block h-auto w-full"
+                          />
+                          <svg
+                            className="absolute inset-0 h-full w-full"
+                            viewBox="0 0 100 100"
+                            preserveAspectRatio="none"
+                            aria-label="좌석 구역 선택"
+                          >
+                            {zoneOverlays.map((zone) => {
+                              const isSelected = selectedZone?.id === zone.id;
+                              const needsGeometryReview = !zone.polygon;
+                              const zoneLabel = `${zone.name} ${zone.grade}`;
 
-                        return (
+                              return (
+                                <g
+                                  key={zone.id}
+                                  className={[
+                                    "cursor-pointer transition",
+                                    isSelected && !needsGeometryReview
+                                      ? "fill-primary/25 stroke-primary"
+                                      : isSelected && needsGeometryReview
+                                        ? "fill-amber-400/25 stroke-amber-600"
+                                        : needsGeometryReview
+                                          ? "fill-amber-400/15 stroke-amber-500 hover:fill-amber-400/25"
+                                          : "fill-emerald-400/15 stroke-emerald-500 hover:fill-emerald-400/25",
+                                  ].join(" ")}
+                                  role="button"
+                                  tabIndex={0}
+                                  aria-label={zoneLabel}
+                                  onClick={() => handleZoneSelect(zone)}
+                                  onKeyDown={(event) => {
+                                    if (
+                                      event.key === "Enter" ||
+                                      event.key === " "
+                                    ) {
+                                      event.preventDefault();
+                                      handleZoneSelect(zone);
+                                    }
+                                  }}
+                                >
+                                  <title>{zoneLabel}</title>
+                                  {zone.polygon ? (
+                                    <polygon
+                                      points={getPolygonPointsAttribute(
+                                        zone.polygon,
+                                      )}
+                                      strokeWidth={isSelected ? 0.9 : 0.6}
+                                      vectorEffect="non-scaling-stroke"
+                                    />
+                                  ) : zone.bbox ? (
+                                    <rect
+                                      x={zone.bbox.x * 100}
+                                      y={zone.bbox.y * 100}
+                                      width={zone.bbox.width * 100}
+                                      height={zone.bbox.height * 100}
+                                      strokeWidth={isSelected ? 0.9 : 0.6}
+                                      vectorEffect="non-scaling-stroke"
+                                    />
+                                  ) : null}
+                                </g>
+                              );
+                            })}
+                          </svg>
+                          {zoneOverlays.map((zone) =>
+                            zone.labelPoint ? (
+                              <button
+                                key={`${zone.id}-label`}
+                                type="button"
+                                title={
+                                  zone.polygon
+                                    ? `${zone.name} ${zone.grade}`
+                                    : `${zone.name} ${zone.grade} - 외곽선 확인 필요`
+                                }
+                                className={[
+                                  "absolute z-10 max-w-36 rounded-md border bg-background/95 px-2 py-1 text-left text-[11px] font-medium shadow-sm transition",
+                                  selectedZone?.id === zone.id && zone.polygon
+                                    ? "border-primary text-primary"
+                                    : selectedZone?.id === zone.id
+                                      ? "border-amber-600 text-amber-700"
+                                      : !zone.polygon
+                                        ? "border-amber-400 text-amber-700 hover:border-amber-600"
+                                        : "hover:border-primary/60",
+                                ].join(" ")}
+                                style={{
+                                  left: `${zone.labelPoint.x * 100}%`,
+                                  top: `${zone.labelPoint.y * 100}%`,
+                                  transform: "translate(-50%, -50%)",
+                                }}
+                                onClick={() => handleZoneSelect(zone)}
+                              >
+                                <span className="block truncate">
+                                  {zone.name}
+                                </span>
+                                <span className="block truncate text-muted-foreground">
+                                  {zone.grade}
+                                </span>
+                                {!zone.polygon ? (
+                                  <span className="block truncate text-amber-700">
+                                    확인 필요
+                                  </span>
+                                ) : null}
+                              </button>
+                            ) : null,
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {zonesWithGeometry.map((zone) => (
                           <button
                             key={zone.id}
                             type="button"
                             className={[
-                              "absolute rounded-sm border-2 bg-primary/15 text-[11px] font-semibold text-primary transition hover:bg-primary/25",
+                              "rounded-md border bg-background px-3 py-2 text-left text-sm transition",
                               selectedZoneId === zone.id
-                                ? "border-primary bg-primary/30"
-                                : "border-primary/60",
+                                ? "border-primary bg-primary/5"
+                                : "hover:border-primary/60",
                             ].join(" ")}
-                            style={{
-                              left: `${zone.bbox.x * 100}%`,
-                              top: `${zone.bbox.y * 100}%`,
-                              width: `${zone.bbox.width * 100}%`,
-                              height: `${zone.bbox.height * 100}%`,
-                            }}
-                            onClick={() => {
-                              handleZoneSelect(zone);
-                            }}
-                            title={`${zone.name} · 남은 좌석 ${remainingCount}석`}
+                            onClick={() => handleZoneSelect(zone)}
                           >
-                            <span className="block truncate px-1">
-                              {zone.name}
+                            <span className="font-medium">
+                              {zone.name} · {zone.grade}
                             </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                      {zones.map((zone) => (
-                        <button
-                          key={zone.id}
-                          type="button"
-                          className={[
-                            "rounded-md border bg-background px-3 py-2 text-left text-sm transition",
-                            selectedZoneId === zone.id
-                              ? "border-primary bg-primary/5"
-                              : "hover:border-primary/60",
-                          ].join(" ")}
-                          onClick={() => {
-                            handleZoneSelect(zone);
-                          }}
-                        >
-                          <span className="font-medium">
-                            {zone.name} · {zone.grade}
-                          </span>
-                          <span className="mt-1 block text-xs text-muted-foreground">
-                            남은 좌석{" "}
-                            {
-                              zone.virtualSeats.filter((seat) =>
-                                remainingSelectableSeatIdSet.has(seat.id),
-                              ).length
-                            }
-                            석 / 전체 {zone.virtualSeats.length}석
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {!isSplitSeatSelect ? (
-                    <div className="rounded-md border bg-secondary p-3">
-                    <div className="mb-3 text-xs text-muted-foreground">
-                      <p>
-                        전체 남은 좌석 {remainingSelectableSeatIds.length}석 /{" "}
-                        전체 {selectableSeatIds.length}석
-                      </p>
-                      {selectedZone ? (
-                        <p className="mt-1">
-                          선택 구역: {selectedZone.name} · {selectedZone.grade}
-                        </p>
-                      ) : null}
-                    </div>
-
-                    {!selectedZone ? (
-                      <p className="rounded-md border bg-background px-4 py-6 text-center text-sm text-muted-foreground">
-                        배치도에서 구역을 먼저 선택하세요.
-                      </p>
-                    ) : groupedSeats.length > 0 ? (
-                      <div className="max-h-96 overflow-auto">
-                        <div className="grid min-w-max gap-2">
-                          {groupedSeats.map((row) => (
-                            <div
-                              key={row.rowLabel}
-                              className="flex items-center gap-2"
-                            >
-                              <span className="w-10 shrink-0 text-xs text-muted-foreground">
-                                {row.rowLabel}
+                            <span className="mt-1 block text-xs text-muted-foreground">
+                              남은 좌석{" "}
+                              {
+                                zone.virtualSeats.filter((seat) =>
+                                  remainingSelectableSeatIdSet.has(seat.id),
+                                ).length
+                              }
+                              석 / 전체 {zone.virtualSeats.length}석
+                            </span>
+                            {!zone.polygon ? (
+                              <span className="mt-1 block text-xs text-amber-700">
+                                외곽선 확인 필요
                               </span>
-                              <div className="flex gap-1.5">
-                                {row.seats.map((seat) => {
-                                  const isSelected =
-                                    selectedSeatId === seat.id;
-                                  const isCandidate =
-                                    remainingSelectableSeatIdSet.has(seat.id);
-                                  const isSoldOut = soldOutSeatIdSet.has(
-                                    seat.id,
-                                  );
-                                  const isSelectable =
-                                    seat.status === "available" &&
-                                    !isCompleting;
-
-                                  return (
-                                    <button
-                                      key={seat.id}
-                                      type="button"
-                                      className={[
-                                        "h-8 w-8 shrink-0 rounded-md border bg-background text-xs font-medium transition",
-                                        isSelected
-                                          ? "border-primary bg-primary text-primary-foreground"
-                                          : "",
-                                        !isSelected && isCandidate
-                                          ? "border-emerald-500 bg-emerald-50 text-emerald-900 hover:border-primary"
-                                          : "",
-                                        !isCandidate
-                                          ? "opacity-35"
-                                          : "",
-                                      ].join(" ")}
-                                      title={
-                                        isCandidate
-                                          ? "선택 가능한 남은 좌석"
-                                          : isSoldOut
-                                            ? "이미 선택된 좌석입니다."
-                                            : "선택할 수 없는 좌석"
-                                      }
-                                      disabled={!isSelectable}
-                                      onClick={() => handleSeatClick(seat)}
-                                    >
-                                      {seat.seatNumber}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
+                            ) : null}
+                          </button>
+                        ))}
                       </div>
-                    ) : (
-                      <p className="rounded-md border bg-background px-4 py-6 text-center text-sm text-muted-foreground">
-                        선택한 구역에 생성된 가상 좌석이 없습니다.
-                      </p>
-                    )}
                     </div>
-                  ) : null}
+
+                    {!isSplitSeatSelect ? (
+                      <div className="rounded-md border bg-secondary p-3">
+                        <div className="mb-3 text-xs text-muted-foreground">
+                          <p>
+                            전체 남은 좌석 {remainingSelectableSeatIds.length}석 /{" "}
+                            전체 {selectableSeatIds.length}석
+                          </p>
+                          {selectedZone ? (
+                            <p className="mt-1">
+                              선택 구역: {selectedZone.name} ·{" "}
+                              {selectedZone.grade}
+                            </p>
+                          ) : null}
+                        </div>
+
+                        {!selectedZone ? (
+                          <p className="rounded-md border bg-background px-4 py-6 text-center text-sm text-muted-foreground">
+                            배치도에서 구역을 먼저 선택하세요.
+                          </p>
+                        ) : groupedSeats.length > 0 ? (
+                          <div className="max-h-96 overflow-auto">
+                            <div className="grid min-w-max gap-2">
+                              {groupedSeats.map((row) => (
+                                <div
+                                  key={row.rowLabel}
+                                  className="flex items-center gap-2"
+                                >
+                                  <span className="w-10 shrink-0 text-xs text-muted-foreground">
+                                    {row.rowLabel}
+                                  </span>
+                                  <div className="flex gap-1.5">
+                                    {row.seats.map((seat) => {
+                                      const isSelected =
+                                        selectedSeatId === seat.id;
+                                      const isCandidate =
+                                        remainingSelectableSeatIdSet.has(
+                                          seat.id,
+                                        );
+                                      const isSoldOut = soldOutSeatIdSet.has(
+                                        seat.id,
+                                      );
+                                      const isSelectable =
+                                        seat.status === "available" &&
+                                        !isCompleting;
+
+                                      return (
+                                        <button
+                                          key={seat.id}
+                                          type="button"
+                                          className={[
+                                            "h-8 w-8 shrink-0 rounded-md border bg-background text-xs font-medium transition",
+                                            isSelected
+                                              ? "border-primary bg-primary text-primary-foreground"
+                                              : "",
+                                            !isSelected && isCandidate
+                                              ? "border-emerald-500 bg-emerald-50 text-emerald-900 hover:border-primary"
+                                              : "",
+                                            !isCandidate ? "opacity-35" : "",
+                                          ].join(" ")}
+                                          title={
+                                            isCandidate
+                                              ? "선택 가능한 남은 좌석"
+                                              : isSoldOut
+                                                ? "이미 선택된 좌석입니다."
+                                                : "선택할 수 없는 좌석"
+                                          }
+                                          disabled={!isSelectable}
+                                          onClick={() => handleSeatClick(seat)}
+                                        >
+                                          {seat.seatNumber}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="rounded-md border bg-background px-4 py-6 text-center text-sm text-muted-foreground">
+                            선택한 구역에 생성된 가상 좌석이 없습니다.
+                          </p>
+                        )}
+                      </div>
+                    ) : null}
                   </div>
                 )}
               </section>

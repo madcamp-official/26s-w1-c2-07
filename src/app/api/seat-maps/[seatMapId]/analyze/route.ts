@@ -44,6 +44,11 @@ function getAnalysisPrompt(input: {
     "- 티켓 가격 등급이 이미지에 없거나 확실하지 않으면 grade는 반드시 \"미확인\"으로 반환하세요.",
     "- bbox와 polygon 좌표는 이미지 전체 기준 0~1 정규화 좌표로 반환하세요.",
     "- bbox는 { x, y, width, height } 형식이며 x/y는 좌상단 기준입니다.",
+    "- polygon은 좌석 구역의 실제 보이는 외곽선을 시계 방향 또는 반시계 방향 점 배열로 반환하세요.",
+    "- polygon에 bbox의 네 꼭짓점만 그대로 복사하지 마세요.",
+    "- 실제 구역이 축에 평행한 완전한 직사각형으로 보이는 경우에만 polygon이 bbox와 같은 4점 사각형이어도 됩니다.",
+    "- 부채꼴, 곡선형, 사다리꼴, 꺾인 블록, 통로가 포함된 비정형 구역은 실제 외곽을 따라 5~12개 점으로 근사하세요.",
+    "- 실제 외곽선을 확신할 수 없으면 polygon은 빈 배열 []로 반환하고 confidence를 0.6 이하로 낮추세요.",
     "- 확실하지 않은 구역은 confidence를 낮게 설정하세요.",
     "- 이미지에 보이는 구역명과 등급을 우선 사용하고, 모호하면 일반적인 등급명을 추정하세요.",
     "- 중복 구역은 가능한 한 하나로 합치되, 물리적으로 떨어진 구역이면 별도 구역으로 반환하세요.",
@@ -136,7 +141,8 @@ export async function POST(
     });
 
     const rawAnalysis = JSON.parse(response.output_text) as unknown;
-    const { zones, discardedCount } = normalizeSeatMapAnalysis(rawAnalysis);
+    const { zones, discardedCount, imprecisePolygonCount } =
+      normalizeSeatMapAnalysis(rawAnalysis);
 
     if (zones.length === 0) {
       throw new Error("저장 가능한 좌석 구역을 찾지 못했습니다.");
@@ -149,6 +155,7 @@ export async function POST(
         ? (JSON.parse(JSON.stringify(response.usage)) as Prisma.InputJsonValue)
         : null,
       discardedCount,
+      imprecisePolygonCount,
     };
 
     const updatedSeatMap = await prisma.$transaction(async (tx) => {
