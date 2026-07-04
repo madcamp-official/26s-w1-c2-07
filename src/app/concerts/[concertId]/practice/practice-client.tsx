@@ -1,6 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type SyntheticEvent,
+  type WheelEvent,
+} from "react";
 import Link from "next/link";
 import {
   CalendarDays,
@@ -81,6 +89,7 @@ type PositionedSeatSummary = VirtualSeatSummary & {
   zoneGrade: string;
   x: number;
   y: number;
+  sizePercent: number;
 };
 
 type SeatZoneSummary = {
@@ -99,12 +108,30 @@ type SeatZoneWithGeometry = Omit<SeatZoneSummary, "bbox" | "polygon"> & {
   labelPoint: Point | null;
 };
 
+type SeatRowSummary = {
+  rowLabel: string;
+  seats: VirtualSeatSummary[];
+};
+
+type HorizontalSegment = {
+  start: number;
+  end: number;
+  width: number;
+};
+
+type PolygonSeatRowLayout = SeatRowSummary & {
+  y: number;
+  segment: HorizontalSegment;
+};
+
 type PracticeClientProps = {
   concert: ConcertSummary;
   schedules: ScheduleSummary[];
   seatMap: {
     id: string;
     imageUrl: string;
+    imageWidth: number | null;
+    imageHeight: number | null;
   };
   zones: SeatZoneSummary[];
 };
@@ -202,6 +229,358 @@ function isNormalizedCoordinate(
   );
 }
 
+const DIRECT_SEAT_SIZE_RATIO = 0.84;
+const DIRECT_SEAT_BOUNDARY_RATIO = 0.9;
+const DIRECT_SEAT_MAX_SIZE_PERCENT = 2.2;
+const DIRECT_SEAT_FALLBACK_SIZE_PERCENT = 1.8;
+const DIRECT_SEAT_MAP_DEFAULT_ZOOM = 1;
+const DIRECT_SEAT_MAP_MIN_ZOOM = 1;
+const DIRECT_SEAT_MAP_MAX_ZOOM = 3;
+const DIRECT_SEAT_MAP_ZOOM_STEP = 0.12;
+const GEOMETRY_EPSILON = 0.000001;
+
+function clampNumber(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function getSeatMapHeightRatio(seatMap: PracticeClientProps["seatMap"]) {
+  if (
+    typeof seatMap.imageWidth === "number" &&
+    Number.isFinite(seatMap.imageWidth) &&
+    seatMap.imageWidth > 0 &&
+    typeof seatMap.imageHeight === "number" &&
+    Number.isFinite(seatMap.imageHeight) &&
+    seatMap.imageHeight > 0
+  ) {
+    return seatMap.imageHeight / seatMap.imageWidth;
+  }
+
+  return 1;
+}
+
+function getCoordinateBounds(seats: VirtualSeatSummary[]) {
+  const coordinates = seats
+    .filter(
+      (seat): seat is VirtualSeatSummary & { x: number; y: number } =>
+        isNormalizedCoordinate(seat.x) && isNormalizedCoordinate(seat.y),
+    )
+    .map((seat) => ({
+      x: seat.x,
+      y: seat.y,
+    }));
+
+  if (coordinates.length === 0) {
+    return null;
+  }
+
+  const minX = Math.min(...coordinates.map((coordinate) => coordinate.x));
+  const maxX = Math.max(...coordinates.map((coordinate) => coordinate.x));
+  const minY = Math.min(...coordinates.map((coordinate) => coordinate.y));
+  const maxY = Math.max(...coordinates.map((coordinate) => coordinate.y));
+
+  return {
+    x: minX,
+    y: minY,
+    width: maxX - minX,
+    height: maxY - minY,
+  } satisfies BoundingBox;
+}
+
+function getPointBounds(points: Point[]) {
+  const minX = Math.min(...points.map((point) => point.x));
+  const maxX = Math.max(...points.map((point) => point.x));
+  const minY = Math.min(...points.map((point) => point.y));
+  const maxY = Math.max(...points.map((point) => point.y));
+
+  return {
+    x: minX,
+    y: minY,
+    width: maxX - minX,
+    height: maxY - minY,
+  } satisfies BoundingBox;
+}
+
+function getPolygonHorizontalSegments(points: Point[], y: number) {
+  const intersections: number[] = [];
+
+  for (let pointIndex = 0; pointIndex < points.length; pointIndex += 1) {
+    const currentPoint = points[pointIndex];
+    const nextPoint = points[(pointIndex + 1) % points.length];
+
+    if (Math.abs(currentPoint.y - nextPoint.y) <= GEOMETRY_EPSILON) {
+      continue;
+    }
+
+    const minY = Math.min(currentPoint.y, nextPoint.y);
+    const maxY = Math.max(currentPoint.y, nextPoint.y);
+
+    if (y < minY || y >= maxY) {
+      continue;
+    }
+
+    const progress = (y - currentPoint.y) / (nextPoint.y - currentPoint.y);
+    intersections.push(
+      currentPoint.x + (nextPoint.x - currentPoint.x) * progress,
+    );
+  }
+
+  intersections.sort((firstX, secondX) => firstX - secondX);
+
+  const segments: HorizontalSegment[] = [];
+
+  for (
+    let intersectionIndex = 0;
+    intersectionIndex < intersections.length - 1;
+    intersectionIndex += 2
+  ) {
+    const start = Math.max(0, intersections[intersectionIndex]);
+    const end = Math.min(1, intersections[intersectionIndex + 1]);
+    const width = end - start;
+
+    if (width > GEOMETRY_EPSILON) {
+      segments.push({
+        start,
+        end,
+        width,
+      });
+    }
+  }
+
+  return segments;
+}
+
+function getWidestSegment(segments: HorizontalSegment[]) {
+  return segments.reduce<HorizontalSegment | null>(
+    (widestSegment, segment) =>
+      !widestSegment || segment.width > widestSegment.width
+        ? segment
+        : widestSegment,
+    null,
+  );
+}
+
+function getPolygonRowLayout(input: {
+  polygon: Point[];
+  row: SeatRowSummary;
+  rowIndex: number;
+  rowCount: number;
+}) {
+  const bounds = getPointBounds(input.polygon);
+
+  if (bounds.width <= 0 || bounds.height <= 0) {
+    return null;
+  }
+
+  const rowGap = bounds.height / (input.rowCount + 1);
+  const preferredY = bounds.y + rowGap * (input.rowIndex + 1);
+  const candidateOffsets = [0, -0.2, 0.2, -0.4, 0.4, -0.6, 0.6];
+
+  for (const candidateOffset of candidateOffsets) {
+    const y = preferredY + rowGap * candidateOffset;
+
+    if (y <= bounds.y || y >= bounds.y + bounds.height) {
+      continue;
+    }
+
+    const segment = getWidestSegment(
+      getPolygonHorizontalSegments(input.polygon, y),
+    );
+
+    if (segment) {
+      return {
+        ...input.row,
+        y,
+        segment,
+      } satisfies PolygonSeatRowLayout;
+    }
+  }
+
+  return null;
+}
+
+function getPolygonSeatPoint(input: {
+  layout: PolygonSeatRowLayout;
+  seatIndex: number;
+}) {
+  return {
+    x:
+      input.layout.segment.start +
+      input.layout.segment.width *
+        ((input.seatIndex + 1) / (input.layout.seats.length + 1)),
+    y: input.layout.y,
+  } satisfies Point;
+}
+
+function getDisplayDistanceToSegment(input: {
+  point: Point;
+  segmentStart: Point;
+  segmentEnd: Point;
+  seatMapHeightRatio: number;
+}) {
+  const pointX = input.point.x;
+  const pointY = input.point.y * input.seatMapHeightRatio;
+  const startX = input.segmentStart.x;
+  const startY = input.segmentStart.y * input.seatMapHeightRatio;
+  const endX = input.segmentEnd.x;
+  const endY = input.segmentEnd.y * input.seatMapHeightRatio;
+  const segmentX = endX - startX;
+  const segmentY = endY - startY;
+  const segmentLengthSquared = segmentX * segmentX + segmentY * segmentY;
+
+  if (segmentLengthSquared <= GEOMETRY_EPSILON) {
+    return Math.hypot(pointX - startX, pointY - startY);
+  }
+
+  const progress = Math.min(
+    1,
+    Math.max(
+      0,
+      ((pointX - startX) * segmentX + (pointY - startY) * segmentY) /
+        segmentLengthSquared,
+    ),
+  );
+  const projectionX = startX + segmentX * progress;
+  const projectionY = startY + segmentY * progress;
+
+  return Math.hypot(pointX - projectionX, pointY - projectionY);
+}
+
+function getDistanceToPolygonBoundary(input: {
+  point: Point;
+  polygon: Point[];
+  seatMapHeightRatio: number;
+}) {
+  let nearestDistance = Number.POSITIVE_INFINITY;
+
+  for (let pointIndex = 0; pointIndex < input.polygon.length; pointIndex += 1) {
+    const distance = getDisplayDistanceToSegment({
+      point: input.point,
+      segmentStart: input.polygon[pointIndex],
+      segmentEnd: input.polygon[(pointIndex + 1) % input.polygon.length],
+      seatMapHeightRatio: input.seatMapHeightRatio,
+    });
+
+    nearestDistance = Math.min(nearestDistance, distance);
+  }
+
+  return nearestDistance;
+}
+
+function isPointInsidePolygon(point: Point, polygon: Point[]) {
+  let isInside = false;
+
+  for (
+    let pointIndex = 0, previousPointIndex = polygon.length - 1;
+    pointIndex < polygon.length;
+    previousPointIndex = pointIndex, pointIndex += 1
+  ) {
+    const currentPoint = polygon[pointIndex];
+    const previousPoint = polygon[previousPointIndex];
+    const intersects =
+      currentPoint.y > point.y !== previousPoint.y > point.y &&
+      point.x <
+        ((previousPoint.x - currentPoint.x) * (point.y - currentPoint.y)) /
+          (previousPoint.y - currentPoint.y) +
+          currentPoint.x;
+
+    if (intersects) {
+      isInside = !isInside;
+    }
+  }
+
+  return isInside;
+}
+
+function clampDirectSeatSizePercent(value: number) {
+  if (!Number.isFinite(value) || value <= 0) {
+    return DIRECT_SEAT_FALLBACK_SIZE_PERCENT;
+  }
+
+  return Math.min(value, DIRECT_SEAT_MAX_SIZE_PERCENT);
+}
+
+function getDirectSeatSizePercent(input: {
+  bbox: BoundingBox | null;
+  coordinateBounds: BoundingBox | null;
+  polygonRowLayouts: PolygonSeatRowLayout[] | null;
+  rowCount: number;
+  maxSeatsPerRow: number;
+  seatMapHeightRatio: number;
+}) {
+  if (input.polygonRowLayouts?.length) {
+    const columnGaps = input.polygonRowLayouts
+      .filter((layout) => layout.seats.length > 1)
+      .map((layout) => layout.segment.width / (layout.seats.length + 1));
+    const rowYPositions = input.polygonRowLayouts
+      .map((layout) => layout.y)
+      .sort((firstY, secondY) => firstY - secondY);
+    const rowGaps = rowYPositions
+      .slice(1)
+      .map(
+        (rowY, rowIndex) =>
+          (rowY - rowYPositions[rowIndex]) * input.seatMapHeightRatio,
+      )
+      .filter((rowGap) => rowGap > GEOMETRY_EPSILON);
+    const nearestGap = Math.min(...columnGaps, ...rowGaps);
+
+    if (Number.isFinite(nearestGap)) {
+      return clampDirectSeatSizePercent(
+        nearestGap * 100 * DIRECT_SEAT_SIZE_RATIO,
+      );
+    }
+  }
+
+  const bounds = input.bbox ?? input.coordinateBounds;
+
+  if (!bounds) {
+    return DIRECT_SEAT_FALLBACK_SIZE_PERCENT;
+  }
+
+  const isBboxBased = Boolean(input.bbox);
+  const columnDivider = isBboxBased
+    ? input.maxSeatsPerRow + 1
+    : input.maxSeatsPerRow - 1;
+  const rowDivider = isBboxBased ? input.rowCount + 1 : input.rowCount - 1;
+  const columnGap =
+    input.maxSeatsPerRow > 1 && columnDivider > 0
+      ? bounds.width / columnDivider
+      : Number.POSITIVE_INFINITY;
+  const rowGap =
+    input.rowCount > 1 && rowDivider > 0
+      ? (bounds.height * input.seatMapHeightRatio) / rowDivider
+      : Number.POSITIVE_INFINITY;
+  const nearestGap = Math.min(columnGap, rowGap);
+
+  if (Number.isFinite(nearestGap)) {
+    return clampDirectSeatSizePercent(
+      nearestGap * 100 * DIRECT_SEAT_SIZE_RATIO,
+    );
+  }
+
+  const singleSeatGap =
+    Math.min(bounds.width, bounds.height * input.seatMapHeightRatio) * 100 * 0.5;
+
+  return clampDirectSeatSizePercent(singleSeatGap);
+}
+
+function getPolygonBoundedSeatSizePercent(input: {
+  point: Point;
+  polygon: Point[];
+  seatMapHeightRatio: number;
+  seatSizePercent: number;
+}) {
+  const boundaryDistance = getDistanceToPolygonBoundary(input);
+
+  if (!Number.isFinite(boundaryDistance) || boundaryDistance <= 0) {
+    return 0;
+  }
+
+  return Math.min(
+    input.seatSizePercent,
+    boundaryDistance * 2 * 100 * DIRECT_SEAT_BOUNDARY_RATIO,
+  );
+}
+
 export function PracticeClient({
   concert,
   schedules,
@@ -240,6 +619,11 @@ export function PracticeClient({
   const [startDelayMs, setStartDelayMs] = useState<number | null>(null);
   const [isStartRequestSent, setIsStartRequestSent] = useState(false);
   const [isCompleting, setIsCompleting] = useState(false);
+  const [seatMapZoom, setSeatMapZoom] = useState(DIRECT_SEAT_MAP_DEFAULT_ZOOM);
+  const [loadedSeatMapMetrics, setLoadedSeatMapMetrics] = useState<{
+    seatMapId: string;
+    heightRatio: number;
+  } | null>(null);
   const [result, setResult] = useState<{
     status: "success" | "failed";
     elapsedMs: number;
@@ -249,11 +633,16 @@ export function PracticeClient({
   const completingRef = useRef(false);
   const startClickTimerRef = useRef<number | null>(null);
   const toastTimerRef = useRef<number | null>(null);
+  const directSeatMapScrollRef = useRef<HTMLDivElement | null>(null);
 
   const steps = PRACTICE_TEMPLATE_STEPS[templateType];
   const currentStep = phase === "running" ? steps[currentStepIndex] : null;
   const isSplitSeatSelect = templateType === "nol_old";
   const isDirectSeatMapSelect = templateType === "nol_new";
+  const seatMapHeightRatio =
+    loadedSeatMapMetrics?.seatMapId === seatMap.id
+      ? loadedSeatMapMetrics.heightRatio
+      : getSeatMapHeightRatio(seatMap);
   const zonesWithGeometry = useMemo<SeatZoneWithGeometry[]>(
     () =>
       zones.map((zone) => {
@@ -337,8 +726,10 @@ export function PracticeClient({
   );
   const directSeatMapSeats = useMemo(
     () =>
-      zones.flatMap((zone) => {
-        const bbox = parseBbox(zone.bbox);
+      zonesWithGeometry.flatMap((zone) => {
+        const bbox = zone.bbox;
+        const polygon = zone.polygon;
+        const coordinateBounds = getCoordinateBounds(zone.virtualSeats);
         const rowMap = new Map<string, VirtualSeatSummary[]>();
 
         for (const seat of sortSeats(zone.virtualSeats)) {
@@ -351,19 +742,80 @@ export function PracticeClient({
           rowLabel,
           seats,
         }));
+        const maxDirectSeatsPerRow = rows.reduce(
+          (maxSeatCount, row) => Math.max(maxSeatCount, row.seats.length),
+          0,
+        );
+        const polygonRowLayouts = polygon
+          ? rows
+              .map((row, rowIndex) =>
+                getPolygonRowLayout({
+                  polygon,
+                  row,
+                  rowIndex,
+                  rowCount: rows.length,
+                }),
+              )
+              .filter((layout): layout is PolygonSeatRowLayout =>
+                Boolean(layout),
+              )
+          : null;
+        const polygonRowLayoutMap = new Map(
+          polygonRowLayouts?.map((layout) => [layout.rowLabel, layout]) ?? [],
+        );
+        const seatSizePercent = getDirectSeatSizePercent({
+          bbox,
+          coordinateBounds,
+          polygonRowLayouts,
+          rowCount: rows.length,
+          maxSeatsPerRow: maxDirectSeatsPerRow,
+          seatMapHeightRatio,
+        });
 
         return rows.flatMap((row, rowIndex) =>
           row.seats.flatMap((seat, seatIndex) => {
+            const polygonRowLayout = polygonRowLayoutMap.get(row.rowLabel);
+            const polygonPoint = polygonRowLayout
+              ? getPolygonSeatPoint({
+                  layout: polygonRowLayout,
+                  seatIndex,
+                })
+              : null;
             const fallbackX = bbox
               ? bbox.x + bbox.width * ((seatIndex + 1) / (row.seats.length + 1))
               : null;
             const fallbackY = bbox
               ? bbox.y + bbox.height * ((rowIndex + 1) / (rows.length + 1))
               : null;
-            const x = isNormalizedCoordinate(seat.x) ? seat.x : fallbackX;
-            const y = isNormalizedCoordinate(seat.y) ? seat.y : fallbackY;
+            const x = polygon
+              ? polygonPoint?.x
+              : isNormalizedCoordinate(seat.x)
+                ? seat.x
+                : fallbackX;
+            const y = polygon
+              ? polygonPoint?.y
+              : isNormalizedCoordinate(seat.y)
+                ? seat.y
+                : fallbackY;
 
             if (!isNormalizedCoordinate(x) || !isNormalizedCoordinate(y)) {
+              return [];
+            }
+
+            const boundedSeatSizePercent =
+              polygon && isPointInsidePolygon({ x, y }, polygon)
+                ? getPolygonBoundedSeatSizePercent({
+                    point: {
+                      x,
+                      y,
+                    },
+                    polygon,
+                    seatMapHeightRatio,
+                    seatSizePercent,
+                  })
+                : seatSizePercent;
+
+            if (boundedSeatSizePercent <= 0) {
               return [];
             }
 
@@ -375,12 +827,13 @@ export function PracticeClient({
                 zoneGrade: zone.grade,
                 x,
                 y,
+                sizePercent: boundedSeatSizePercent,
               } satisfies PositionedSeatSummary,
             ];
           }),
         );
       }),
-    [zones],
+    [seatMapHeightRatio, zonesWithGeometry],
   );
   const directSeatMapAvailableSeatIds = useMemo(
     () =>
@@ -396,6 +849,8 @@ export function PracticeClient({
           Math.max(0, ((initialQueueCount - queueCount) / initialQueueCount) * 100),
         )
       : 0;
+  const directSeatMapWidthPercent = seatMapZoom * 100;
+  const directSeatMaxSizePx = seatMapZoom * 18;
 
   const completePractice = useCallback(
     async (input: {
@@ -688,6 +1143,64 @@ export function PracticeClient({
     setIsStartRequestSent(false);
     setStartCountdown(5);
     setPhase("countdown");
+  }
+
+  function handleSeatMapImageLoad(event: SyntheticEvent<HTMLImageElement>) {
+    const { naturalHeight, naturalWidth } = event.currentTarget;
+
+    if (naturalWidth <= 0 || naturalHeight <= 0) {
+      return;
+    }
+
+    const nextHeightRatio = naturalHeight / naturalWidth;
+
+    setLoadedSeatMapMetrics((currentMetrics) =>
+      currentMetrics?.seatMapId === seatMap.id &&
+      Math.abs(currentMetrics.heightRatio - nextHeightRatio) <= 0.001
+        ? currentMetrics
+        : {
+            seatMapId: seatMap.id,
+            heightRatio: nextHeightRatio,
+          },
+    );
+  }
+
+  function handleSeatMapWheel(event: WheelEvent<HTMLDivElement>) {
+    if (directSeatMapSeats.length === 0) {
+      return;
+    }
+
+    event.preventDefault();
+
+    const container = directSeatMapScrollRef.current;
+
+    if (!container) {
+      return;
+    }
+
+    const containerRect = container.getBoundingClientRect();
+    const pointerX = event.clientX - containerRect.left;
+    const pointerY = event.clientY - containerRect.top;
+    const zoomDirection = event.deltaY < 0 ? 1 : -1;
+    const nextZoom = clampNumber(
+      seatMapZoom + zoomDirection * DIRECT_SEAT_MAP_ZOOM_STEP,
+      DIRECT_SEAT_MAP_MIN_ZOOM,
+      DIRECT_SEAT_MAP_MAX_ZOOM,
+    );
+
+    if (nextZoom === seatMapZoom) {
+      return;
+    }
+
+    const zoomRatio = nextZoom / seatMapZoom;
+    const nextScrollLeft = (container.scrollLeft + pointerX) * zoomRatio - pointerX;
+    const nextScrollTop = (container.scrollTop + pointerY) * zoomRatio - pointerY;
+
+    setSeatMapZoom(nextZoom);
+    window.requestAnimationFrame(() => {
+      container.scrollLeft = nextScrollLeft;
+      container.scrollTop = nextScrollTop;
+    });
   }
 
   async function startPractice(finalStartDelayMs: number) {
@@ -1155,64 +1668,83 @@ export function PracticeClient({
 
                 {isDirectSeatMapSelect ? (
                   <div className="mt-5 rounded-md border bg-secondary p-3">
-                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-                      <span>
-                        선택 가능 좌석 {remainingSelectableSeatIds.length}석 /{" "}
-                        후보 {selectableSeatIds.length}석
+                    <div className="mb-3 flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                        <span>
+                          선택 가능 좌석 {remainingSelectableSeatIds.length}석 /{" "}
+                          후보 {selectableSeatIds.length}석
+                        </span>
+                        <span>
+                          배치도 위에서 마우스 휠로 확대/축소할 수 있습니다.
+                        </span>
+                      </div>
+                      <span className="font-medium text-foreground">
+                        {Math.round(seatMapZoom * 100)}%
                       </span>
-                      <span>좌석은 배치도 위치에 맞춰 원형으로 표시됩니다.</span>
                     </div>
 
                     {directSeatMapSeats.length > 0 ? (
-                      <div className="relative overflow-hidden rounded-md border bg-background">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={seatMap.imageUrl}
-                          alt="좌석 배치도"
-                          className="block w-full select-none"
-                          draggable={false}
-                        />
-                        {directSeatMapSeats.map((seat) => {
-                          const isSelected = selectedSeatId === seat.id;
-                          const isCandidate = remainingSelectableSeatIdSet.has(
-                            seat.id,
-                          );
-                          const isSoldOut = soldOutSeatIdSet.has(seat.id);
-                          const isSelectable =
-                            seat.status === "available" && !isCompleting;
+                      <div
+                        ref={directSeatMapScrollRef}
+                        className="max-h-[72vh] overflow-auto rounded-md border bg-background"
+                        onWheel={handleSeatMapWheel}
+                      >
+                        <div
+                          className="relative min-w-full"
+                          style={{
+                            width: `${directSeatMapWidthPercent}%`,
+                          }}
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={seatMap.imageUrl}
+                            alt="좌석 배치도"
+                            className="block w-full select-none"
+                            draggable={false}
+                            onLoad={handleSeatMapImageLoad}
+                          />
+                          {directSeatMapSeats.map((seat) => {
+                            const isSelected = selectedSeatId === seat.id;
+                            const isCandidate =
+                              remainingSelectableSeatIdSet.has(seat.id);
+                            const isSoldOut = soldOutSeatIdSet.has(seat.id);
+                            const isSelectable =
+                              seat.status === "available" && !isCompleting;
 
-                          return (
-                            <button
-                              key={seat.id}
-                              type="button"
-                              className={[
-                                "absolute h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border text-[0px] shadow-sm transition sm:h-4 sm:w-4",
-                                isSelected
-                                  ? "z-20 border-primary bg-primary"
-                                  : "",
-                                !isSelected && isCandidate
-                                  ? "z-10 border-emerald-700 bg-emerald-400 hover:scale-125 hover:border-primary hover:bg-primary"
-                                  : "",
-                                !isSelected && !isCandidate
-                                  ? "border-muted-foreground/30 bg-muted-foreground/30 opacity-40"
-                                  : "",
-                                isSoldOut
-                                  ? "border-destructive/40 bg-destructive/40 opacity-30"
-                                  : "",
-                              ].join(" ")}
-                              style={{
-                                left: `${seat.x * 100}%`,
-                                top: `${seat.y * 100}%`,
-                              }}
-                              title={`${seat.zoneName} · ${seat.rowLabel} ${seat.seatNumber}번`}
-                              aria-label={`${seat.zoneName} ${seat.rowLabel} ${seat.seatNumber}번 좌석`}
-                              disabled={!isSelectable}
-                              onClick={() => handleSeatClick(seat)}
-                            >
-                              {seat.seatNumber}
-                            </button>
-                          );
-                        })}
+                            return (
+                              <button
+                                key={seat.id}
+                                type="button"
+                                className={[
+                                  "absolute aspect-square -translate-x-1/2 -translate-y-1/2 rounded-full border p-0 text-[0px] leading-none shadow-sm transition",
+                                  isSelected
+                                    ? "z-20 border-primary bg-primary"
+                                    : "",
+                                  !isSelected && isCandidate
+                                    ? "z-10 border-emerald-700 bg-emerald-400 hover:border-primary hover:bg-primary"
+                                    : "",
+                                  !isSelected && !isCandidate
+                                    ? "border-muted-foreground/30 bg-muted-foreground/30 opacity-40"
+                                    : "",
+                                  isSoldOut
+                                    ? "border-destructive/40 bg-destructive/40 opacity-30"
+                                    : "",
+                                ].join(" ")}
+                                style={{
+                                  left: `${seat.x * 100}%`,
+                                  top: `${seat.y * 100}%`,
+                                  width: `min(${directSeatMaxSizePx.toFixed(1)}px, ${seat.sizePercent.toFixed(4)}%)`,
+                                }}
+                                title={`${seat.zoneName} · ${seat.rowLabel} ${seat.seatNumber}번`}
+                                aria-label={`${seat.zoneName} ${seat.rowLabel} ${seat.seatNumber}번 좌석`}
+                                disabled={!isSelectable}
+                                onClick={() => handleSeatClick(seat)}
+                              >
+                                {seat.seatNumber}
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
                     ) : (
                       <p className="rounded-md border bg-background px-4 py-6 text-center text-sm text-muted-foreground">

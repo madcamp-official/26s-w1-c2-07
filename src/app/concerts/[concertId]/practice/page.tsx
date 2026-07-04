@@ -69,6 +69,8 @@ export default async function PracticePage({ params }: PracticePageProps) {
         select: {
           id: true,
           imageUrl: true,
+          imageWidth: true,
+          imageHeight: true,
           zones: {
             orderBy: {
               createdAt: "asc",
@@ -186,6 +188,8 @@ export default async function PracticePage({ params }: PracticePageProps) {
         seatMap={{
           id: latestSeatMap.id,
           imageUrl: latestSeatMap.imageUrl,
+          imageWidth: latestSeatMap.imageWidth,
+          imageHeight: latestSeatMap.imageHeight,
         }}
         zones={zones.map((zone) => ({
           id: zone.id,
