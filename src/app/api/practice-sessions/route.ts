@@ -77,6 +77,7 @@ export async function POST(request: Request) {
         concertId: concert.id,
         templateType: parsedBody.data.templateType,
         difficulty: parsedBody.data.difficulty ?? "normal",
+        startDelayMs: parsedBody.data.startDelayMs ?? 0,
         status: "started",
       },
     });

@@ -171,6 +171,7 @@ model PracticeSession {
   selectedZoneId String?            @db.Uuid
   selectedSeatId String?            @db.Uuid
   elapsedMs      Int                @default(0)
+  startDelayMs   Int                @default(0)
   failReason     String?
   createdAt      DateTime           @default(now())
   completedAt    DateTime?

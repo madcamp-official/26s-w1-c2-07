@@ -78,12 +78,15 @@ export default async function PracticePage({ params }: PracticePageProps) {
               name: true,
               grade: true,
               price: true,
+              bbox: true,
               virtualSeats: {
                 select: {
                   id: true,
                   rowLabel: true,
                   seatNumber: true,
                   status: true,
+                  x: true,
+                  y: true,
                 },
               },
             },
@@ -184,13 +187,20 @@ export default async function PracticePage({ params }: PracticePageProps) {
           name: zone.name,
           grade: zone.grade,
           price: zone.price,
+          bbox: zone.bbox,
           virtualSeats: zone.virtualSeats.map((seat) => ({
             id: seat.id,
             rowLabel: seat.rowLabel,
             seatNumber: seat.seatNumber,
             status: seat.status,
+            zoneId: zone.id,
+            x: seat.x,
+            y: seat.y,
           })),
         }))}
+        seatMap={{
+          imageUrl: latestSeatMap.imageUrl,
+        }}
       />
     </main>
   );

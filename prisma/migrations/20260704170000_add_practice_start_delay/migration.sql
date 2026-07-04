@@ -1,0 +1,1 @@
+ALTER TABLE "PracticeSession" ADD COLUMN "startDelayMs" INTEGER NOT NULL DEFAULT 0;

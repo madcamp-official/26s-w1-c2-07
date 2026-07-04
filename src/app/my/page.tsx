@@ -107,6 +107,7 @@ export default async function MyPage() {
                   <p className="font-medium">{session.concert.title}</p>
                   <p className="mt-1 text-sm text-muted-foreground">
                     {session.status} · {session.elapsedMs / 1000}초 ·{" "}
+                    시작 반응 {((session.startDelayMs ?? 0) / 1000).toFixed(1)}초 ·{" "}
                     {session.selectedZone?.name ?? "좌석 미선택"}
                     {session.selectedSeat
                       ? ` ${session.selectedSeat.rowLabel}열 ${session.selectedSeat.seatNumber}번`
@@ -125,4 +126,3 @@ export default async function MyPage() {
     </main>
   );
 }
-

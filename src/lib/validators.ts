@@ -79,6 +79,7 @@ export const practiceSessionCreateSchema = z.object({
   concertId: z.string().uuid(),
   templateType: z.enum(ACTIVE_TICKET_TEMPLATE_TYPES),
   difficulty: z.enum(PRACTICE_DIFFICULTIES).optional(),
+  startDelayMs: z.number().int().min(0).max(60 * 1000).optional(),
 });
 
 export const practiceSessionCompleteSchema = z

@@ -1,4 +1,4 @@
-const CAPTCHA_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const CAPTCHA_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
 export function generatePracticeCaptcha(length = 6) {
   return Array.from({ length })
