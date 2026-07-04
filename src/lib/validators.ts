@@ -11,9 +11,21 @@ export const reviewSchema = z.object({
   soundScore: z.number().int().min(1).max(5),
   distanceScore: z.number().int().min(1).max(5),
   satisfactionScore: z.number().int().min(1).max(5),
-  content: z.string().min(10),
+  content: z.string().trim().min(10).max(1000),
   imageUrl: z.string().url().optional(),
 });
+
+const reviewBaseSchema = z.object({
+  viewScore: z.coerce.number().int().min(1).max(5),
+  soundScore: z.coerce.number().int().min(1).max(5),
+  distanceScore: z.coerce.number().int().min(1).max(5),
+  satisfactionScore: z.coerce.number().int().min(1).max(5),
+  content: z.string().trim().min(10).max(1000),
+});
+
+export const reviewCreateSchema = reviewBaseSchema;
+
+export const reviewUpdateSchema = reviewBaseSchema;
 
 export const seatZoneSchema = z.object({
   name: z.string().min(1),
