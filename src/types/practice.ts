@@ -6,6 +6,8 @@ export type PracticeStep =
   | "RESULT";
 
 export type TicketTemplateType =
+  | "nol_old"
+  | "nol_new"
   | "nol"
   | "yes24"
   | "melon"

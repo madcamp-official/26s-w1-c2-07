@@ -7,6 +7,7 @@ const eslintConfig = [
   {
     ignores: [
       ".next/**",
+      ".tools/**",
       "node_modules/**",
       "out/**",
       "dist/**",

@@ -5,10 +5,10 @@ import type {
 } from "@/types/practice";
 
 export const ACTIVE_TICKET_TEMPLATE_TYPES = [
-  "nol",
+  "nol_old",
+  "nol_new",
   "yes24",
   "melon",
-  "ticketlink",
 ] as const satisfies readonly TicketTemplateType[];
 
 export const PRACTICE_DIFFICULTIES = [
@@ -18,6 +18,8 @@ export const PRACTICE_DIFFICULTIES = [
 ] as const satisfies readonly PracticeDifficulty[];
 
 export const PRACTICE_TEMPLATE_LABELS: Record<TicketTemplateType, string> = {
+  nol_old: "NOL 티켓(구버전)",
+  nol_new: "NOL 티켓(신버전)",
   nol: "NOL 티켓",
   yes24: "YES24 티켓",
   melon: "멜론 티켓",
@@ -36,6 +38,8 @@ export const PRACTICE_TEMPLATE_STEPS: Record<
   TicketTemplateType,
   PracticeStep[]
 > = {
+  nol_old: ["WAITING_QUEUE", "CAPTCHA", "DATE_SELECT", "SEAT_SELECT", "RESULT"],
+  nol_new: ["WAITING_QUEUE", "DATE_SELECT", "CAPTCHA", "SEAT_SELECT", "RESULT"],
   nol: ["WAITING_QUEUE", "CAPTCHA", "DATE_SELECT", "SEAT_SELECT", "RESULT"],
   yes24: ["DATE_SELECT", "WAITING_QUEUE", "CAPTCHA", "SEAT_SELECT", "RESULT"],
   melon: ["WAITING_QUEUE", "DATE_SELECT", "SEAT_SELECT", "CAPTCHA", "RESULT"],

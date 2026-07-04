@@ -176,7 +176,7 @@ export function PracticeClient({
 }: PracticeClientProps) {
   const [phase, setPhase] = useState<PracticePhase>("setup");
   const [templateType, setTemplateType] =
-    useState<TicketTemplateType>("nol");
+    useState<TicketTemplateType>("nol_old");
   const [difficulty, setDifficulty] =
     useState<PracticeDifficulty>("normal");
   const [sessionId, setSessionId] = useState<string | null>(null);
