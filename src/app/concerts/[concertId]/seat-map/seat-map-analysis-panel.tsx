@@ -85,6 +85,14 @@ function parseBbox(value: unknown): BoundingBox | null {
     return null;
   }
 
+  if (x < 0 || x > 1 || y < 0 || y > 1 || width > 1 || height > 1) {
+    return null;
+  }
+
+  if (x + width > 1 || y + height > 1) {
+    return null;
+  }
+
   return {
     x,
     y,
@@ -115,6 +123,18 @@ function formatPrice(price: number | null) {
     : "가격 미입력";
 }
 
+function getAnalyzeButtonText(status: AnalysisStatus) {
+  if (status === "success") {
+    return "AI 좌석 구역 다시 분석";
+  }
+
+  if (status === "failed") {
+    return "AI 좌석 구역 다시 분석";
+  }
+
+  return "AI 좌석 구역 분석 시작";
+}
+
 export function SeatMapAnalysisPanel({ seatMap }: SeatMapAnalysisPanelProps) {
   const router = useRouter();
   const [message, setMessage] = useState("");
@@ -135,8 +155,6 @@ export function SeatMapAnalysisPanel({ seatMap }: SeatMapAnalysisPanelProps) {
     [seatMap.zones],
   );
   const selectedZone = zones.find((zone) => zone.id === selectedZoneId) ?? null;
-  const canAnalyze =
-    seatMap.analysisStatus === "pending" || seatMap.analysisStatus === "failed";
 
   function selectZone(zone: AnalyzedSeatMapZone) {
     setSelectedZoneId(zone.id);
@@ -146,6 +164,16 @@ export function SeatMapAnalysisPanel({ seatMap }: SeatMapAnalysisPanelProps) {
   }
 
   async function handleAnalyze() {
+    if (seatMap.analysisStatus === "success" && zones.length > 0) {
+      const confirmed = window.confirm(
+        "재분석하면 기존 좌석 구역과 사용자가 수정한 내용이 새 분석 결과로 대체될 수 있습니다. 다시 분석할까요?",
+      );
+
+      if (!confirmed) {
+        return;
+      }
+    }
+
     setIsPending(true);
     setMessage("");
 
@@ -164,6 +192,10 @@ export function SeatMapAnalysisPanel({ seatMap }: SeatMapAnalysisPanelProps) {
       setMessage(
         `${payload.data?.zoneCount ?? 0}개의 좌석 구역 후보를 저장했습니다.`,
       );
+      setSelectedZoneId(null);
+      setName("");
+      setGrade("");
+      setPrice("");
       router.refresh();
     } catch (error) {
       setMessage(
@@ -297,22 +329,27 @@ export function SeatMapAnalysisPanel({ seatMap }: SeatMapAnalysisPanelProps) {
         <Button
           type="button"
           onClick={handleAnalyze}
-          disabled={!canAnalyze || isPending}
+          disabled={isPending}
         >
           {isPending ? (
             <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
           ) : (
             <WandSparkles className="h-4 w-4" aria-hidden="true" />
           )}
-          {seatMap.analysisStatus === "failed"
-            ? "AI 좌석 구역 다시 분석"
-            : "AI 좌석 구역 분석 시작"}
+          {getAnalyzeButtonText(seatMap.analysisStatus)}
         </Button>
       </div>
 
       {seatMap.analysisStatus === "failed" ? (
         <p className="mt-4 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           이전 분석이 실패했습니다. 이미지를 확인한 뒤 다시 분석할 수 있습니다.
+        </p>
+      ) : null}
+
+      {seatMap.analysisStatus === "success" && zones.length > 0 ? (
+        <p className="mt-4 rounded-md border bg-secondary px-3 py-2 text-sm text-muted-foreground">
+          재분석하면 현재 좌석 구역과 사용자가 수정한 내용이 새 분석 결과로
+          대체됩니다.
         </p>
       ) : null}
 
