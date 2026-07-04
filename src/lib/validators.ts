@@ -51,3 +51,9 @@ export const seatMapUploadSchema = z.object({
   imageWidth: z.coerce.number().int().positive().max(50000).optional(),
   imageHeight: z.coerce.number().int().positive().max(50000).optional(),
 });
+
+export const virtualSeatGenerateSchema = z.object({
+  rows: z.number().int().min(1).max(20).optional(),
+  seatsPerRow: z.number().int().min(1).max(30).optional(),
+  overwrite: z.boolean().optional(),
+});
