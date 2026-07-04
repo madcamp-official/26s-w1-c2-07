@@ -17,7 +17,7 @@ type PracticeState = {
 
 const initialState = {
   step: "WAITING_QUEUE" as PracticeStep,
-  templateType: "basic" as TicketTemplateType,
+  templateType: "nol" as TicketTemplateType,
   selectedZoneId: undefined,
   selectedSeatId: undefined,
   remainingMs: 60_000,

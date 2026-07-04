@@ -21,6 +21,8 @@ enum SeatStatus {
 }
 
 enum TicketTemplateType {
+  nol
+  ticketlink
   interpark
   melon
   yes24
