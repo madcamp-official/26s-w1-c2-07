@@ -5,7 +5,15 @@ export type PracticeStep =
   | "SEAT_SELECT"
   | "RESULT";
 
-export type TicketTemplateType = "interpark" | "melon" | "yes24" | "basic";
+export type TicketTemplateType =
+  | "nol"
+  | "yes24"
+  | "melon"
+  | "ticketlink"
+  | "interpark"
+  | "basic";
+
+export type PracticeDifficulty = "easy" | "normal" | "hard";
 
 export type PracticeResult = {
   success: boolean;
