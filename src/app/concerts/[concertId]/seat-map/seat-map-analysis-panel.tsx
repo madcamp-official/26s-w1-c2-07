@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { VirtualSeatPanel } from "@/app/concerts/[concertId]/seat-map/virtual-seat-panel";
 
 type AnalysisStatus = "pending" | "success" | "failed";
 
@@ -444,86 +445,102 @@ export function SeatMapAnalysisPanel({ seatMap }: SeatMapAnalysisPanelProps) {
             })}
           </div>
 
-          <form
-            className="rounded-md border bg-secondary p-4"
-            onSubmit={handleSave}
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h3 className="font-semibold">선택 구역 수정</h3>
-                {selectedZone ? (
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {selectedZone.name} · {selectedZone.grade}
-                  </p>
+          <div className="grid gap-4">
+            <form
+              className="rounded-md border bg-secondary p-4"
+              onSubmit={handleSave}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="font-semibold">선택 구역 수정</h3>
+                  {selectedZone ? (
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {selectedZone.name} · {selectedZone.grade}
+                    </p>
+                  ) : null}
+                </div>
+                {selectedZone && isLowConfidence(selectedZone.confidence) ? (
+                  <span className="shrink-0 rounded-md border border-amber-300 bg-amber-100 px-2 py-1 text-xs text-amber-900">
+                    확인 필요
+                  </span>
                 ) : null}
               </div>
-              {selectedZone && isLowConfidence(selectedZone.confidence) ? (
-                <span className="shrink-0 rounded-md border border-amber-300 bg-amber-100 px-2 py-1 text-xs text-amber-900">
-                  확인 필요
-                </span>
-              ) : null}
-            </div>
 
-            <div className="mt-4 grid gap-3">
-              <label className="grid gap-1.5 text-sm font-medium">
-                구역명
-                <input
-                  className="rounded-md border bg-background px-3 py-2 text-sm"
-                  value={name}
-                  maxLength={50}
-                  onChange={(event) => setName(event.target.value)}
+              <div className="mt-4 grid gap-3">
+                <label className="grid gap-1.5 text-sm font-medium">
+                  구역명
+                  <input
+                    className="rounded-md border bg-background px-3 py-2 text-sm"
+                    value={name}
+                    maxLength={50}
+                    onChange={(event) => setName(event.target.value)}
+                    disabled={!selectedZone || isMutating}
+                  />
+                </label>
+
+                <label className="grid gap-1.5 text-sm font-medium">
+                  등급
+                  <input
+                    className="rounded-md border bg-background px-3 py-2 text-sm"
+                    value={grade}
+                    maxLength={30}
+                    placeholder="미확인, VIP, R, S, A"
+                    onChange={(event) => setGrade(event.target.value)}
+                    disabled={!selectedZone || isMutating}
+                  />
+                </label>
+
+                <label className="grid gap-1.5 text-sm font-medium">
+                  가격
+                  <input
+                    className="rounded-md border bg-background px-3 py-2 text-sm"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    value={price}
+                    placeholder="예: 165000"
+                    onChange={(event) =>
+                      setPrice(event.target.value.replace(/[^0-9]/g, ""))
+                    }
+                    disabled={!selectedZone || isMutating}
+                  />
+                </label>
+              </div>
+
+              <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                <Button type="submit" disabled={!selectedZone || isMutating}>
+                  {isMutating ? (
+                    <Loader2
+                      className="h-4 w-4 animate-spin"
+                      aria-hidden="true"
+                    />
+                  ) : (
+                    <Save className="h-4 w-4" aria-hidden="true" />
+                  )}
+                  저장
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleDelete}
                   disabled={!selectedZone || isMutating}
-                />
-              </label>
+                >
+                  <Trash2 className="h-4 w-4" aria-hidden="true" />
+                  삭제
+                </Button>
+              </div>
+            </form>
 
-              <label className="grid gap-1.5 text-sm font-medium">
-                등급
-                <input
-                  className="rounded-md border bg-background px-3 py-2 text-sm"
-                  value={grade}
-                  maxLength={30}
-                  placeholder="미확인, VIP, R, S, A"
-                  onChange={(event) => setGrade(event.target.value)}
-                  disabled={!selectedZone || isMutating}
-                />
-              </label>
-
-              <label className="grid gap-1.5 text-sm font-medium">
-                가격
-                <input
-                  className="rounded-md border bg-background px-3 py-2 text-sm"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  value={price}
-                  placeholder="예: 165000"
-                  onChange={(event) =>
-                    setPrice(event.target.value.replace(/[^0-9]/g, ""))
-                  }
-                  disabled={!selectedZone || isMutating}
-                />
-              </label>
-            </div>
-
-            <div className="mt-4 grid gap-2 sm:grid-cols-2">
-              <Button type="submit" disabled={!selectedZone || isMutating}>
-                {isMutating ? (
-                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                ) : (
-                  <Save className="h-4 w-4" aria-hidden="true" />
-                )}
-                저장
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleDelete}
-                disabled={!selectedZone || isMutating}
-              >
-                <Trash2 className="h-4 w-4" aria-hidden="true" />
-                삭제
-              </Button>
-            </div>
-          </form>
+            {selectedZone ? (
+              <VirtualSeatPanel key={selectedZone.id} zone={selectedZone} />
+            ) : (
+              <section className="rounded-md border bg-secondary p-4">
+                <h3 className="font-semibold">가상 좌석</h3>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  좌석 구역을 선택하면 연습용 가상 좌석을 생성할 수 있습니다.
+                </p>
+              </section>
+            )}
+          </div>
         </div>
       ) : (
         <p className="mt-4 text-sm text-muted-foreground">
