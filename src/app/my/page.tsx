@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation";
 
-import { prisma } from "@/lib/prisma";
+import { MyPageClient } from "@/app/my/my-page-client";
 import { getCurrentUserWithProfile } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 
 export default async function MyPage() {
   const auth = await getCurrentUserWithProfile();
@@ -18,12 +19,14 @@ export default async function MyPage() {
       include: {
         concert: {
           select: {
+            id: true,
             title: true,
             venueName: true,
           },
         },
         zone: {
           select: {
+            id: true,
             name: true,
             grade: true,
           },
@@ -32,7 +35,6 @@ export default async function MyPage() {
       orderBy: {
         createdAt: "desc",
       },
-      take: 5,
     }),
     prisma.practiceSession.findMany({
       where: {
@@ -41,18 +43,29 @@ export default async function MyPage() {
       include: {
         concert: {
           select: {
+            id: true,
             title: true,
             venueName: true,
           },
         },
+        schedule: {
+          select: {
+            id: true,
+            performanceDate: true,
+            roundName: true,
+            startTime: true,
+          },
+        },
         selectedZone: {
           select: {
+            id: true,
             name: true,
             grade: true,
           },
         },
         selectedSeat: {
           select: {
+            id: true,
             rowLabel: true,
             seatNumber: true,
           },
@@ -61,68 +74,54 @@ export default async function MyPage() {
       orderBy: {
         createdAt: "desc",
       },
-      take: 5,
     }),
   ]);
 
   return (
-    <main className="mx-auto w-full max-w-6xl px-6 py-8">
-      <section className="rounded-lg border bg-card p-6">
-        <p className="text-sm text-muted-foreground">마이페이지</p>
-        <h1 className="mt-1 text-2xl font-semibold">
-          {auth.profile.nickname ?? auth.user.email}
-        </h1>
-        <p className="mt-2 text-sm text-muted-foreground">{auth.user.email}</p>
-      </section>
-
-      <section className="mt-6 grid gap-6 lg:grid-cols-2">
-        <div className="rounded-lg border bg-card p-6">
-          <h2 className="text-lg font-semibold">내 좌석 리뷰</h2>
-          {reviews.length > 0 ? (
-            <ul className="mt-4 space-y-3">
-              {reviews.map((review) => (
-                <li key={review.id} className="rounded-md border p-4">
-                  <p className="font-medium">{review.concert.title}</p>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {review.zone.name} · {review.zone.grade} · 만족도{" "}
-                    {review.satisfactionScore}/5
-                  </p>
-                  <p className="mt-2 line-clamp-2 text-sm">{review.content}</p>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="mt-4 rounded-md border bg-secondary px-4 py-6 text-sm text-muted-foreground">
-              아직 작성한 좌석 리뷰가 없습니다.
-            </p>
-          )}
-        </div>
-
-        <div className="rounded-lg border bg-card p-6">
-          <h2 className="text-lg font-semibold">내 티켓팅 연습 기록</h2>
-          {practiceSessions.length > 0 ? (
-            <ul className="mt-4 space-y-3">
-              {practiceSessions.map((session) => (
-                <li key={session.id} className="rounded-md border p-4">
-                  <p className="font-medium">{session.concert.title}</p>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {session.status} · {session.elapsedMs / 1000}초 ·{" "}
-                    {session.selectedZone?.name ?? "좌석 미선택"}
-                    {session.selectedSeat
-                      ? ` ${session.selectedSeat.rowLabel}열 ${session.selectedSeat.seatNumber}번`
-                      : ""}
-                  </p>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="mt-4 rounded-md border bg-secondary px-4 py-6 text-sm text-muted-foreground">
-              아직 저장된 티켓팅 연습 기록이 없습니다.
-            </p>
-          )}
-        </div>
-      </section>
-    </main>
+    <MyPageClient
+      initialUser={{
+        id: auth.user.id,
+        email: auth.user.email ?? "",
+      }}
+      initialProfile={{
+        id: auth.profile.id,
+        nickname: auth.profile.nickname,
+        profileImageUrl: auth.profile.profileImageUrl,
+      }}
+      initialReviews={reviews.map((review) => ({
+        id: review.id,
+        concert: review.concert,
+        zone: review.zone,
+        viewScore: review.viewScore,
+        soundScore: review.soundScore,
+        distanceScore: review.distanceScore,
+        satisfactionScore: review.satisfactionScore,
+        content: review.content,
+        imageUrl: review.imageUrl,
+        createdAt: review.createdAt.toISOString(),
+        updatedAt: review.updatedAt.toISOString(),
+      }))}
+      initialPracticeSessions={practiceSessions.map((session) => ({
+        id: session.id,
+        concert: session.concert,
+        schedule: session.schedule
+          ? {
+              id: session.schedule.id,
+              performanceDate: session.schedule.performanceDate.toISOString(),
+              roundName: session.schedule.roundName,
+              startTime: session.schedule.startTime,
+            }
+          : null,
+        templateType: session.templateType,
+        difficulty: session.difficulty,
+        status: session.status,
+        selectedZone: session.selectedZone,
+        selectedSeat: session.selectedSeat,
+        elapsedMs: session.elapsedMs,
+        failReason: session.failReason,
+        createdAt: session.createdAt.toISOString(),
+        completedAt: session.completedAt?.toISOString() ?? null,
+      }))}
+    />
   );
 }
-
