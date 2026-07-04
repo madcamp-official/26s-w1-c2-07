@@ -22,7 +22,16 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { parseBbox, type BoundingBox } from "@/lib/seat-zone-geometry";
+import {
+  getBboxCenter,
+  getPolygonCenter,
+  getPolygonPointsAttribute,
+  isBboxCornerPolygon,
+  parseBbox,
+  parsePolygon,
+  type BoundingBox,
+  type Point,
+} from "@/lib/seat-zone-geometry";
 
 type ConcertSummary = {
   id: string;
@@ -38,10 +47,14 @@ type SeatMapZone = {
   grade: string;
   price: number | null;
   bbox: unknown;
+  polygon: unknown;
 };
 
-type SeatMapZoneWithBbox = Omit<SeatMapZone, "bbox"> & {
+type SeatMapZoneWithGeometry = Omit<SeatMapZone, "bbox" | "polygon"> & {
   bbox: BoundingBox;
+  polygon: Point[] | null;
+  labelPoint: Point;
+  needsGeometryReview: boolean;
 };
 
 type ReviewUser = {
@@ -210,11 +223,30 @@ export function ReviewClient({
   const zones = useMemo(
     () =>
       seatMap.zones
-        .map((zone) => ({
-          ...zone,
-          bbox: parseBbox(zone.bbox),
-        }))
-        .filter((zone): zone is SeatMapZoneWithBbox => Boolean(zone.bbox)),
+        .map((zone) => {
+          const bbox = parseBbox(zone.bbox);
+          const parsedPolygon = parsePolygon(zone.polygon);
+          const polygon =
+            parsedPolygon && bbox && !isBboxCornerPolygon(parsedPolygon, bbox)
+              ? parsedPolygon
+              : null;
+
+          return {
+            ...zone,
+            bbox,
+            polygon,
+            labelPoint: polygon
+              ? getPolygonCenter(polygon)
+              : bbox
+                ? getBboxCenter(bbox)
+                : null,
+            needsGeometryReview: !polygon,
+          };
+        })
+        .filter(
+          (zone): zone is SeatMapZoneWithGeometry =>
+            Boolean(zone.bbox && zone.labelPoint),
+        ),
     [seatMap.zones],
   );
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(
@@ -507,13 +539,71 @@ export function ReviewClient({
 
         <div className="mt-5 overflow-hidden rounded-md border bg-secondary">
           <div className="relative">
-            {/* Keep the rendered bitmap and bbox overlay in the same coordinate space. */}
+            {/* Keep the rendered bitmap and zone overlay in the same coordinate space. */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={seatMap.imageUrl}
               alt="좌석 배치도"
               className="block h-auto w-full"
             />
+            <svg
+              className="absolute inset-0 h-full w-full"
+              viewBox="0 0 100 100"
+              preserveAspectRatio="none"
+              aria-label="리뷰 좌석 구역 선택"
+            >
+              {zones.map((zone) => {
+                const isSelected = selectedZone.id === zone.id;
+                const zoneLabel = `${zone.name} ${zone.grade}`;
+
+                return (
+                  <g
+                    key={zone.id}
+                    className={[
+                      "cursor-pointer transition",
+                      isSelected && !zone.needsGeometryReview
+                        ? "fill-primary/25 stroke-primary"
+                        : isSelected && zone.needsGeometryReview
+                          ? "fill-amber-400/25 stroke-amber-600"
+                          : zone.needsGeometryReview
+                            ? "fill-amber-400/15 stroke-amber-500 hover:fill-amber-400/25"
+                            : "fill-emerald-400/15 stroke-emerald-500 hover:fill-emerald-400/25",
+                    ].join(" ")}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={zoneLabel}
+                    onClick={() => selectZone(zone.id)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        selectZone(zone.id);
+                      }
+                    }}
+                  >
+                    <title>
+                      {zoneLabel}
+                      {zone.needsGeometryReview ? " - 외곽선 확인 필요" : ""}
+                    </title>
+                    {zone.polygon ? (
+                      <polygon
+                        points={getPolygonPointsAttribute(zone.polygon)}
+                        strokeWidth={isSelected ? 0.9 : 0.6}
+                        vectorEffect="non-scaling-stroke"
+                      />
+                    ) : (
+                      <rect
+                        x={zone.bbox.x * 100}
+                        y={zone.bbox.y * 100}
+                        width={zone.bbox.width * 100}
+                        height={zone.bbox.height * 100}
+                        strokeWidth={isSelected ? 0.9 : 0.6}
+                        vectorEffect="non-scaling-stroke"
+                      />
+                    )}
+                  </g>
+                );
+              })}
+            </svg>
             {zones.map((zone) => {
               const isSelected = selectedZone.id === zone.id;
 
@@ -523,24 +613,32 @@ export function ReviewClient({
                   type="button"
                   onClick={() => selectZone(zone.id)}
                   className={[
-                    "absolute border-2 text-left text-[11px] font-medium outline-none transition",
-                    isSelected
-                      ? "border-primary bg-primary/25 ring-2 ring-primary/60"
-                      : "border-emerald-500 bg-emerald-400/15 hover:bg-emerald-400/25",
+                    "absolute z-10 max-w-40 rounded-md border bg-background/95 px-2 py-1 text-left text-[11px] font-medium shadow-sm outline-none transition",
+                    isSelected && !zone.needsGeometryReview
+                      ? "border-primary text-primary ring-2 ring-primary/40"
+                      : isSelected
+                        ? "border-amber-600 text-amber-700 ring-2 ring-amber-400/40"
+                        : zone.needsGeometryReview
+                          ? "border-amber-400 text-amber-700 hover:border-amber-600"
+                          : "hover:border-primary/60",
                   ].join(" ")}
                   style={{
-                    left: `${zone.bbox.x * 100}%`,
-                    top: `${zone.bbox.y * 100}%`,
-                    width: `${zone.bbox.width * 100}%`,
-                    height: `${zone.bbox.height * 100}%`,
+                    left: `${zone.labelPoint.x * 100}%`,
+                    top: `${zone.labelPoint.y * 100}%`,
+                    transform: "translate(-50%, -50%)",
                   }}
                 >
-                  <span className="inline-flex max-w-full items-center gap-1 bg-background/90 px-1.5 py-1 text-foreground shadow-sm">
+                  <span className="inline-flex max-w-full items-center gap-1">
                     <MessageSquare className="h-3 w-3" aria-hidden="true" />
                     <span className="truncate">
                       {zone.name} · {zone.grade}
                     </span>
                   </span>
+                  {zone.needsGeometryReview ? (
+                    <span className="block truncate text-amber-700">
+                      확인 필요
+                    </span>
+                  ) : null}
                 </button>
               );
             })}

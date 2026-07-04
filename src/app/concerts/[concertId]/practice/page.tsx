@@ -78,6 +78,8 @@ export default async function PracticePage({ params }: PracticePageProps) {
               name: true,
               grade: true,
               price: true,
+              bbox: true,
+              polygon: true,
               virtualSeats: {
                 select: {
                   id: true,
@@ -179,11 +181,17 @@ export default async function PracticePage({ params }: PracticePageProps) {
           roundName: schedule.roundName,
           startTime: schedule.startTime,
         }))}
+        seatMap={{
+          id: latestSeatMap.id,
+          imageUrl: latestSeatMap.imageUrl,
+        }}
         zones={zones.map((zone) => ({
           id: zone.id,
           name: zone.name,
           grade: zone.grade,
           price: zone.price,
+          bbox: zone.bbox,
+          polygon: zone.polygon,
           virtualSeats: zone.virtualSeats.map((seat) => ({
             id: seat.id,
             rowLabel: seat.rowLabel,

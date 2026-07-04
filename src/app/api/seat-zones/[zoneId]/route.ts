@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
 import { apiData, apiError } from "@/lib/api";
@@ -72,6 +73,11 @@ export async function PATCH(
       name: parsedBody.data.name,
       grade: parsedBody.data.grade,
       price: parsedBody.data.price ?? null,
+      ...(parsedBody.data.polygon
+        ? {
+            polygon: parsedBody.data.polygon as unknown as Prisma.InputJsonValue,
+          }
+        : {}),
       isAiGenerated: false,
     },
   });

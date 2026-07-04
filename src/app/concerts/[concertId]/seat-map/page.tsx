@@ -85,6 +85,7 @@ export default async function SeatMapPage({ params }: SeatMapPageProps) {
                 grade: zone.grade,
                 price: zone.price,
                 bbox: zone.bbox,
+                polygon: zone.polygon,
                 confidence: zone.confidence,
                 isAiGenerated: zone.isAiGenerated,
               })),
