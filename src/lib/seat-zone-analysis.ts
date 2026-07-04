@@ -6,6 +6,8 @@ export const MAX_AI_SEAT_ZONES = 80;
 export const LOW_CONFIDENCE_THRESHOLD = 0.65;
 
 const UNKNOWN_GRADE = "미확인";
+const IMPRECISE_POLYGON_CONFIDENCE = 0.6;
+const POLYGON_POINT_TOLERANCE = 0.003;
 const TICKET_GRADE_PATTERN =
   /^(VVIP|VIP|OP|SR|R|S|A|B|C|D|E|P)(석|등급|구역)?$/i;
 const NON_TICKET_GRADE_PATTERN =
@@ -130,13 +132,43 @@ function normalizePoint(point: unknown): Point | null {
   };
 }
 
-function polygonFromBbox(bbox: BoundingBox): Point[] {
+function getBboxCornerPoints(bbox: BoundingBox): Point[] {
   return [
     { x: bbox.x, y: bbox.y },
     { x: bbox.x + bbox.width, y: bbox.y },
     { x: bbox.x + bbox.width, y: bbox.y + bbox.height },
     { x: bbox.x, y: bbox.y + bbox.height },
   ];
+}
+
+function arePointsClose(firstPoint: Point, secondPoint: Point) {
+  return (
+    Math.abs(firstPoint.x - secondPoint.x) <= POLYGON_POINT_TOLERANCE &&
+    Math.abs(firstPoint.y - secondPoint.y) <= POLYGON_POINT_TOLERANCE
+  );
+}
+
+function isBboxCornerPolygon(polygon: Point[], bbox: BoundingBox) {
+  if (polygon.length !== 4) {
+    return false;
+  }
+
+  const bboxCornerPoints = getBboxCornerPoints(bbox);
+  const matchedPointIndexes = new Set<number>();
+
+  return bboxCornerPoints.every((cornerPoint) => {
+    const matchedIndex = polygon.findIndex(
+      (point, index) =>
+        !matchedPointIndexes.has(index) && arePointsClose(point, cornerPoint),
+    );
+
+    if (matchedIndex < 0) {
+      return false;
+    }
+
+    matchedPointIndexes.add(matchedIndex);
+    return true;
+  });
 }
 
 function normalizeText(value: unknown, fallback: string) {
@@ -186,6 +218,7 @@ export function normalizeSeatMapAnalysis(raw: unknown) {
   const usedNames = new Map<string, number>();
   let unnamedIndex = 1;
   let discardedCount = 0;
+  let imprecisePolygonCount = 0;
   const zones: SeatZoneAnalysis[] = [];
 
   for (const zone of parsed.data.zones.slice(0, MAX_AI_SEAT_ZONES)) {
@@ -199,24 +232,33 @@ export function normalizeSeatMapAnalysis(raw: unknown) {
     const polygon = (zone.polygon ?? [])
       .map((point) => normalizePoint(point))
       .filter((point): point is Point => Boolean(point));
+    const hasPrecisePolygon =
+      polygon.length >= 3 && !isBboxCornerPolygon(polygon, bbox);
     const name = getUniqueName(
       normalizeText(zone.name, `미분류 구역 ${unnamedIndex++}`),
       usedNames,
     );
-    const confidence = clamp(toFiniteNumber(zone.confidence) ?? 0.5);
+    const rawConfidence = clamp(toFiniteNumber(zone.confidence) ?? 0.5);
+
+    if (!hasPrecisePolygon) {
+      imprecisePolygonCount += 1;
+    }
 
     zones.push({
       name,
       grade: normalizeGrade(zone.grade),
       bbox,
-      polygon: polygon.length >= 3 ? polygon : polygonFromBbox(bbox),
-      confidence,
+      polygon: hasPrecisePolygon ? polygon : [],
+      confidence: hasPrecisePolygon
+        ? rawConfidence
+        : Math.min(rawConfidence, IMPRECISE_POLYGON_CONFIDENCE),
     });
   }
 
   return {
     zones,
     discardedCount,
+    imprecisePolygonCount,
   };
 }
 

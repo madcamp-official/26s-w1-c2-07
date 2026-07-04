@@ -57,6 +57,7 @@ export default async function ReviewsPage({ params }: ReviewsPageProps) {
                 grade: true,
                 price: true,
                 bbox: true,
+                polygon: true,
               },
             },
           },

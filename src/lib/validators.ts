@@ -48,6 +48,11 @@ export const seatZoneSchema = z.object({
   confidence: z.number().min(0).max(1).optional(),
 });
 
+const polygonPointSchema = z.object({
+  x: z.number().min(0).max(1),
+  y: z.number().min(0).max(1),
+});
+
 export const seatZoneUpdateSchema = z.object({
   name: z.string().trim().min(1).max(50),
   grade: z
@@ -56,6 +61,7 @@ export const seatZoneUpdateSchema = z.object({
     .max(30)
     .transform((value) => value || "미확인"),
   price: z.number().int().nonnegative().nullable().optional(),
+  polygon: z.array(polygonPointSchema).min(3).max(40).optional(),
 });
 
 export const profileUpdateSchema = z.object({
