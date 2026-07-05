@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { z } from "zod";
@@ -24,6 +25,33 @@ type ConcertDetailPageProps = {
   }>;
 };
 
+function ConcertPoster({
+  src,
+  title,
+}: {
+  src: string | null;
+  title: string;
+}) {
+  return (
+    <div className="relative aspect-[2/3] w-full overflow-hidden rounded-lg border bg-secondary">
+      {src ? (
+        <Image
+          src={src}
+          alt={`${title} 포스터`}
+          fill
+          priority
+          sizes="(min-width: 768px) 220px, 288px"
+          className="object-cover"
+        />
+      ) : (
+        <div className="flex h-full items-center justify-center px-4 text-center text-sm text-muted-foreground">
+          포스터 준비 중
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default async function ConcertDetailPage({
   params,
 }: ConcertDetailPageProps) {
@@ -47,28 +75,36 @@ export default async function ConcertDetailPage({
   return (
     <main className="mx-auto w-full max-w-6xl px-6 py-8">
       <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
-        <section className="overflow-hidden rounded-lg border bg-card">
-          <div
-            className="min-h-72 bg-secondary bg-cover bg-center"
-            style={{
-              backgroundImage: concert.posterImageUrl
-                ? `linear-gradient(90deg, rgb(0 0 0 / 0.7), rgb(0 0 0 / 0.18)), url(${concert.posterImageUrl})`
-                : undefined,
-            }}
-          >
-            <div className="flex min-h-72 flex-col justify-end p-6 text-white">
-              <p className="text-sm opacity-85">{concert.artist}</p>
-              <h1 className="mt-2 text-3xl font-semibold tracking-normal">
-                {concert.title}
-              </h1>
-              {concert.isSample ? (
-                <div className="mt-3">
-                  <span className="rounded-md border border-white/30 bg-white/15 px-2.5 py-1 text-xs text-white">
-                    샘플 공연
-                  </span>
+        <section className="rounded-lg border bg-card p-6">
+          <div className="grid gap-6 md:grid-cols-[220px_minmax(0,1fr)]">
+            <div className="mx-auto w-full max-w-72 md:max-w-none">
+              <ConcertPoster
+                src={concert.posterImageUrl}
+                title={concert.title}
+              />
+            </div>
+
+            <div className="min-w-0 space-y-6">
+              <div>
+                <p className="text-sm text-muted-foreground">{concert.artist}</p>
+                <h1 className="mt-2 break-words text-3xl font-semibold tracking-normal">
+                  {concert.title}
+                </h1>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {concert.genre ? (
+                    <span className="rounded-md border bg-secondary px-2.5 py-1 text-xs text-secondary-foreground">
+                      {concert.genre}
+                    </span>
+                  ) : null}
+                  {concert.isSample ? (
+                    <span className="rounded-md border bg-secondary px-2.5 py-1 text-xs text-secondary-foreground">
+                      샘플 공연
+                    </span>
+                  ) : null}
                 </div>
-              ) : null}
-              <div className="mt-5 grid gap-2 text-sm text-white/85 sm:grid-cols-2">
+              </div>
+
+              <div className="grid gap-2 text-sm text-muted-foreground sm:grid-cols-2">
                 <p className="flex items-center gap-2">
                   <CalendarDays className="h-4 w-4" aria-hidden="true" />
                   {formatDateRange(concert.startDate, concert.endDate)}
@@ -81,53 +117,45 @@ export default async function ConcertDetailPage({
                   <Ticket className="h-4 w-4" aria-hidden="true" />
                   {formatPriceRange(concert.priceMin, concert.priceMax)}
                 </p>
-                {concert.genre ? (
-                  <p className="flex items-center gap-2">
-                    <Ticket className="h-4 w-4" aria-hidden="true" />
-                    {concert.genre}
-                  </p>
-                ) : null}
                 <p className="flex items-center gap-2">
                   <MessageSquare className="h-4 w-4" aria-hidden="true" />
                   리뷰 {concert.reviewCount}
                 </p>
               </div>
+
+              {concert.description ? (
+                <p className="text-sm leading-6 text-muted-foreground">
+                  {concert.description}
+                </p>
+              ) : null}
+
+              {concert.bookingUrl ? (
+                <Button asChild variant="outline" size="sm">
+                  <a
+                    href={concert.bookingUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <ExternalLink className="h-4 w-4" aria-hidden="true" />
+                    예매 정보 보기
+                  </a>
+                </Button>
+              ) : null}
+
+              <section>
+                <h2 className="text-lg font-semibold">공연 일정</h2>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  {concert.schedules.map((schedule) => (
+                    <div key={schedule.id} className="rounded-md border p-4">
+                      <p className="font-medium">{schedule.roundName}</p>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {formatDateTime(schedule.performanceDate)}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </section>
             </div>
-          </div>
-
-          <div className="space-y-6 p-6">
-            {concert.description ? (
-              <p className="text-sm leading-6 text-muted-foreground">
-                {concert.description}
-              </p>
-            ) : null}
-
-            {concert.bookingUrl ? (
-              <Button asChild variant="outline" size="sm">
-                <a
-                  href={concert.bookingUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  <ExternalLink className="h-4 w-4" aria-hidden="true" />
-                  예매 정보 보기
-                </a>
-              </Button>
-            ) : null}
-
-            <section>
-              <h2 className="text-lg font-semibold">공연 일정</h2>
-              <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                {concert.schedules.map((schedule) => (
-                  <div key={schedule.id} className="rounded-md border p-4">
-                    <p className="font-medium">{schedule.roundName}</p>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      {formatDateTime(schedule.performanceDate)}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </section>
           </div>
         </section>
 

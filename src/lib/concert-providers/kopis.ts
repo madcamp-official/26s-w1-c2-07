@@ -176,6 +176,25 @@ function getBookingUrl(record: KopisRawRecord) {
   );
 }
 
+function normalizeKopisAssetUrl(value: string) {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    const url = new URL(value);
+
+    if (url.hostname === "www.kopis.or.kr" || url.hostname === "kopis.or.kr") {
+      url.protocol = "https:";
+      url.hostname = "kopis.or.kr";
+    }
+
+    return url.toString();
+  } catch {
+    return value;
+  }
+}
+
 function getDescription(record: KopisRawRecord) {
   const parts = [
     getString(record, "sty"),
@@ -262,7 +281,7 @@ export function normalizeKopisConcert(input: {
     endDate,
     priceMin: priceRange.priceMin,
     priceMax: priceRange.priceMax,
-    posterImageUrl: getString(record, "poster") || null,
+    posterImageUrl: normalizeKopisAssetUrl(getString(record, "poster")),
     description: getDescription(record),
     genre: getString(record, "genrenm") || null,
     bookingUrl: getBookingUrl(record),
