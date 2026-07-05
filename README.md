@@ -301,6 +301,9 @@ NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
 OPENAI_API_KEY=
+KOPIS_API_KEY=
+CONCERT_SYNC_SECRET=
+CRON_SECRET=
 ```
 
 개발 서버 실행 후 브라우저에서 접속한다.
@@ -316,6 +319,17 @@ pnpm lint
 pnpm typecheck
 pnpm build
 ```
+
+최신 공연 정보 동기화는 KOPIS API 키와 동기화 secret을 설정한 뒤 서버 API로 실행한다.
+
+```bash
+curl -X POST http://localhost:3000/api/admin/concerts/sync \
+  -H "Authorization: Bearer $CONCERT_SYNC_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"monthsAhead":6,"rows":20,"pages":1}'
+```
+
+운영 환경에서는 `vercel.json`의 Cron 설정이 매일 한 번 같은 API를 호출해 `Concert`와 `ConcertSchedule`을 최신화한다. 배포 환경에는 `KOPIS_API_KEY`와 `CRON_SECRET` 또는 `CONCERT_SYNC_SECRET`을 설정해야 한다.
 
 ---
 

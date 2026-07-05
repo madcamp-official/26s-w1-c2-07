@@ -32,7 +32,13 @@ test("my page redirects anonymous users to login", async ({ page }) => {
 test("concert list page renders with seeded or empty state", async ({ page }) => {
   await page.goto("/concerts");
 
-  await expect(page.getByRole("heading", { name: "공연 목록" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "다가오는 공연" }),
+  ).toBeVisible();
+  await expect(page.getByRole("link", { name: "샘플 공연" })).toHaveAttribute(
+    "href",
+    "/concerts?scope=samples",
+  );
   await expect(
     page
       .getByText(/등록된 공연 \d+개/)

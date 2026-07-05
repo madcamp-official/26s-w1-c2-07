@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/admin/concerts/sync?monthsAhead=6&rows=20&pages=2",
+      "schedule": "0 18 * * *"
+    }
+  ]
+}
