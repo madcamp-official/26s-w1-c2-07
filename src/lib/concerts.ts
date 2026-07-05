@@ -1,9 +1,14 @@
+import { Prisma } from "@prisma/client";
+
 import { prisma } from "@/lib/prisma";
 
 export type ConcertListScope = "upcoming" | "latest" | "samples" | "all";
 
 type ConcertListOptions = {
   scope?: ConcertListScope;
+  q?: string;
+  region?: string;
+  genre?: string;
 };
 
 function getTodayKstStart() {
@@ -46,29 +51,93 @@ function getConcertListOrderBy(scope: ConcertListScope) {
   ];
 }
 
+function normalizeFilterValue(value: string | undefined) {
+  const trimmed = value?.trim();
+
+  return trimmed ? trimmed : undefined;
+}
+
+function containsInsensitive(value: string) {
+  return {
+    contains: value,
+    mode: Prisma.QueryMode.insensitive,
+  };
+}
+
+function getConcertWhere(options: ConcertListOptions = {}) {
+  const scope = options.scope ?? "upcoming";
+  const q = normalizeFilterValue(options.q);
+  const region = normalizeFilterValue(options.region);
+  const genre = normalizeFilterValue(options.genre);
+  const and: Prisma.ConcertWhereInput[] = [
+    {
+      isVisible: true,
+    },
+  ];
+
+  if (scope === "upcoming" || scope === "latest") {
+    and.push({
+      isSample: false,
+    });
+  }
+
+  if (scope === "samples") {
+    and.push({
+      isSample: true,
+    });
+  }
+
+  if (scope === "upcoming") {
+    and.push({
+      endDate: {
+        gte: getTodayKstStart(),
+      },
+    });
+  }
+
+  if (q) {
+    and.push({
+      OR: [
+        {
+          title: containsInsensitive(q),
+        },
+        {
+          artist: containsInsensitive(q),
+        },
+        {
+          venueName: containsInsensitive(q),
+        },
+        {
+          region: containsInsensitive(q),
+        },
+        {
+          genre: containsInsensitive(q),
+        },
+      ],
+    });
+  }
+
+  if (region) {
+    and.push({
+      region: containsInsensitive(region),
+    });
+  }
+
+  if (genre) {
+    and.push({
+      genre: containsInsensitive(genre),
+    });
+  }
+
+  return {
+    AND: and,
+  } satisfies Prisma.ConcertWhereInput;
+}
+
 export async function getConcertList(options: ConcertListOptions = {}) {
   const scope = options.scope ?? "upcoming";
   const concerts = await prisma.concert.findMany({
-    where: {
-      isVisible: true,
-      ...(scope === "upcoming" || scope === "latest"
-        ? {
-            isSample: false,
-          }
-        : {}),
-      ...(scope === "samples"
-        ? {
-            isSample: true,
-          }
-        : {}),
-      ...(scope === "upcoming"
-        ? {
-            endDate: {
-              gte: getTodayKstStart(),
-            },
-          }
-        : {}),
-    },
+    where: getConcertWhere(options),
     include: {
       _count: {
         select: {
@@ -118,6 +187,50 @@ export async function getConcertList(options: ConcertListOptions = {}) {
       latestSeatMapStatus: latestSeatMap?.analysisStatus ?? null,
     };
   });
+}
+
+export async function getConcertFilterOptions(options: ConcertListOptions = {}) {
+  const scopeWhere = getConcertWhere({
+    scope: options.scope,
+  });
+  const [regionRows, genreRows] = await Promise.all([
+    prisma.concert.findMany({
+      where: scopeWhere,
+      distinct: ["region"],
+      select: {
+        region: true,
+      },
+      orderBy: {
+        region: "asc",
+      },
+    }),
+    prisma.concert.findMany({
+      where: {
+        AND: [
+          scopeWhere,
+          {
+            genre: {
+              not: null,
+            },
+          },
+        ],
+      },
+      distinct: ["genre"],
+      select: {
+        genre: true,
+      },
+      orderBy: {
+        genre: "asc",
+      },
+    }),
+  ]);
+
+  return {
+    regions: regionRows.map((row) => row.region).filter(Boolean),
+    genres: genreRows
+      .map((row) => row.genre)
+      .filter((genre): genre is string => Boolean(genre)),
+  };
 }
 
 export async function getConcertDetail(concertId: string) {

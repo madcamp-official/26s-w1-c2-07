@@ -68,7 +68,16 @@ curl -X POST http://localhost:3000/api/admin/concerts/sync \
   -d '{"monthsAhead":6,"rows":20,"pages":1}'
 ```
 
-동기화 후 `/concerts`에서 다가오는 공연이 표시되는지 확인한다. API 키가 없거나 secret이 틀리면 동기화 API는 실패해야 한다.
+키워드/지역/장르 조건이 필요한 경우 다음처럼 요청한다.
+
+```bash
+curl -X POST http://localhost:3000/api/admin/concerts/sync \
+  -H "Authorization: Bearer $CONCERT_SYNC_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"monthsAhead":6,"rows":20,"pages":1,"genreCode":"AAAA","regionCode":"11","keyword":"사랑"}'
+```
+
+동기화 후 `/concerts`에서 다가오는 공연이 표시되는지 확인한다. `/concerts?q=공연명`, `/concerts?region=서울`, `/concerts?genre=뮤지컬` 검색/필터도 확인한다. API 키가 없거나 secret이 틀리면 동기화 API는 실패해야 한다.
 
 ## 배포 후 Smoke Test
 

@@ -1,6 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { KOPIS_SOURCE, normalizeKopisConcert } from "@/lib/concert-providers/kopis";
+import {
+  fetchKopisConcerts,
+  KOPIS_SOURCE,
+  normalizeKopisConcert,
+} from "@/lib/concert-providers/kopis";
 
 describe("kopis concert provider", () => {
   it("normalizes KOPIS list and detail records into concert input", () => {
@@ -70,5 +74,53 @@ describe("kopis concert provider", () => {
         },
       }),
     ).toBeNull();
+  });
+
+  it("passes optional KOPIS list filters as query parameters", async () => {
+    const originalApiKey = process.env.KOPIS_API_KEY;
+    const originalFetch = globalThis.fetch;
+    const requestedUrls: string[] = [];
+
+    process.env.KOPIS_API_KEY = "test-kopis-key";
+    globalThis.fetch = vi.fn(async (input) => {
+      requestedUrls.push(String(input));
+
+      return new Response("<dbs></dbs>", {
+        status: 200,
+        headers: {
+          "content-type": "application/xml",
+        },
+      });
+    }) as typeof fetch;
+
+    try {
+      await fetchKopisConcerts({
+        from: new Date("2026-07-01T00:00:00+09:00"),
+        to: new Date("2026-07-31T23:59:59+09:00"),
+        page: 2,
+        rows: 30,
+        genreCode: "AAAA",
+        regionCode: "11",
+        keyword: "사랑",
+      });
+    } finally {
+      if (originalApiKey === undefined) {
+        delete process.env.KOPIS_API_KEY;
+      } else {
+        process.env.KOPIS_API_KEY = originalApiKey;
+      }
+
+      globalThis.fetch = originalFetch;
+    }
+
+    const url = new URL(requestedUrls[0]);
+
+    expect(url.pathname).toBe("/openApi/restful/pblprfr");
+    expect(url.searchParams.get("service")).toBe("test-kopis-key");
+    expect(url.searchParams.get("cpage")).toBe("2");
+    expect(url.searchParams.get("rows")).toBe("30");
+    expect(url.searchParams.get("shcate")).toBe("AAAA");
+    expect(url.searchParams.get("signgucode")).toBe("11");
+    expect(url.searchParams.get("shprfnm")).toBe("사랑");
   });
 });

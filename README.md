@@ -329,6 +329,21 @@ curl -X POST http://localhost:3000/api/admin/concerts/sync \
   -d '{"monthsAhead":6,"rows":20,"pages":1}'
 ```
 
+필요한 경우 KOPIS 장르코드, 지역코드, 공연명 키워드로 동기화 범위를 좁힐 수 있다.
+
+```bash
+curl -X POST http://localhost:3000/api/admin/concerts/sync \
+  -H "Authorization: Bearer $CONCERT_SYNC_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"monthsAhead":6,"rows":20,"pages":1,"genreCode":"AAAA","regionCode":"11","keyword":"사랑"}'
+```
+
+사용자 공연 목록은 저장된 DB 데이터를 기준으로 검색/필터링한다.
+
+```text
+/concerts?q=뮤지컬&region=서울&genre=뮤지컬
+```
+
 운영 환경에서는 `vercel.json`의 Cron 설정이 매일 한 번 같은 API를 호출해 `Concert`와 `ConcertSchedule`을 최신화한다. 배포 환경에는 `KOPIS_API_KEY`와 `CRON_SECRET` 또는 `CONCERT_SYNC_SECRET`을 설정해야 한다.
 
 ---

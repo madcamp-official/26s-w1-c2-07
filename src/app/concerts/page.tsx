@@ -1,9 +1,13 @@
 import Image from "next/image";
 import Link from "next/link";
-import { CalendarDays, MapPin, MessageSquare, Ticket } from "lucide-react";
+import { CalendarDays, MapPin, MessageSquare, Search, Ticket } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { getConcertList, type ConcertListScope } from "@/lib/concerts";
+import {
+  getConcertFilterOptions,
+  getConcertList,
+  type ConcertListScope,
+} from "@/lib/concerts";
 import { formatDateRange, formatPriceRange } from "@/utils/format";
 
 const scopeTabs: Array<{
@@ -31,6 +35,9 @@ const scopeTabs: Array<{
 type ConcertListPageProps = {
   searchParams?: Promise<{
     scope?: string;
+    q?: string;
+    region?: string;
+    genre?: string;
   }>;
 };
 
@@ -40,6 +47,39 @@ function parseScope(value: string | undefined): ConcertListScope {
   }
 
   return "upcoming";
+}
+
+function parseFilterValue(value: string | undefined, maxLength: number) {
+  const trimmed = value?.trim();
+
+  return trimmed ? trimmed.slice(0, maxLength) : undefined;
+}
+
+function getConcertScopeHref(
+  scope: ConcertListScope,
+  filters: {
+    q?: string;
+    region?: string;
+    genre?: string;
+  },
+) {
+  const params = new URLSearchParams({
+    scope,
+  });
+
+  if (filters.q) {
+    params.set("q", filters.q);
+  }
+
+  if (filters.region) {
+    params.set("region", filters.region);
+  }
+
+  if (filters.genre) {
+    params.set("genre", filters.genre);
+  }
+
+  return `/concerts?${params.toString()}`;
 }
 
 function ConcertPoster({
@@ -73,9 +113,37 @@ export default async function ConcertListPage({
 }: ConcertListPageProps) {
   const resolvedSearchParams = await searchParams;
   const scope = parseScope(resolvedSearchParams?.scope);
-  const concerts = await getConcertList({
-    scope,
-  });
+  const filters = {
+    q: parseFilterValue(resolvedSearchParams?.q, 100),
+    region: parseFilterValue(resolvedSearchParams?.region, 50),
+    genre: parseFilterValue(resolvedSearchParams?.genre, 50),
+  };
+  const [concerts, filterOptions] = await Promise.all([
+    getConcertList({
+      scope,
+      ...filters,
+    }),
+    getConcertFilterOptions({
+      scope,
+    }),
+  ]);
+  const hasActiveFilters = Boolean(filters.q || filters.region || filters.genre);
+  const resetHref = getConcertScopeHref(scope, {});
+  const countLabel = hasActiveFilters ? "검색 결과" : "등록된 공연";
+  const emptyTitle = hasActiveFilters
+    ? "검색 결과가 없습니다"
+    : "등록된 공연이 없습니다";
+  const emptyDescription = hasActiveFilters
+    ? "다른 검색어 또는 필터를 사용해보세요."
+    : "공연 동기화 또는 seed 데이터를 넣은 뒤 공연 목록을 확인할 수 있습니다.";
+  const regionOptions =
+    filters.region && !filterOptions.regions.includes(filters.region)
+      ? [filters.region, ...filterOptions.regions]
+      : filterOptions.regions;
+  const genreOptions =
+    filters.genre && !filterOptions.genres.includes(filters.genre)
+      ? [filters.genre, ...filterOptions.genres]
+      : filterOptions.genres;
   const activeScopeLabel =
     scopeTabs.find((tab) => tab.value === scope)?.label ?? "다가오는 공연";
 
@@ -87,7 +155,7 @@ export default async function ConcertListPage({
           <h1 className="mt-1 text-2xl font-semibold">{activeScopeLabel}</h1>
         </div>
         <p className="text-sm text-muted-foreground">
-          등록된 공연 {concerts.length}개
+          {countLabel} {concerts.length}개
         </p>
       </div>
 
@@ -99,10 +167,99 @@ export default async function ConcertListPage({
             variant={scope === tab.value ? "default" : "outline"}
             size="sm"
           >
-            <Link href={`/concerts?scope=${tab.value}`}>{tab.label}</Link>
+            <Link href={getConcertScopeHref(tab.value, filters)}>
+              {tab.label}
+            </Link>
           </Button>
         ))}
       </nav>
+
+      <section className="mt-5 rounded-lg border bg-card p-4">
+        <form
+          action="/concerts"
+          className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px_180px_auto_auto] lg:items-end"
+        >
+          <input type="hidden" name="scope" value={scope} />
+
+          <div className="min-w-0">
+            <label
+              htmlFor="concert-search"
+              className="text-xs font-medium text-muted-foreground"
+            >
+              검색어
+            </label>
+            <div className="relative mt-1">
+              <Search
+                className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+                aria-hidden="true"
+              />
+              <input
+                id="concert-search"
+                name="q"
+                type="search"
+                defaultValue={filters.q ?? ""}
+                placeholder="공연명, 아티스트, 공연장"
+                className="h-10 w-full rounded-md border bg-background pl-9 pr-3 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label
+              htmlFor="concert-region"
+              className="text-xs font-medium text-muted-foreground"
+            >
+              지역
+            </label>
+            <select
+              id="concert-region"
+              name="region"
+              defaultValue={filters.region ?? ""}
+              className="mt-1 h-10 w-full rounded-md border bg-background px-3 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              <option value="">전체 지역</option>
+              {regionOptions.map((region) => (
+                <option key={region} value={region}>
+                  {region}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label
+              htmlFor="concert-genre"
+              className="text-xs font-medium text-muted-foreground"
+            >
+              장르
+            </label>
+            <select
+              id="concert-genre"
+              name="genre"
+              defaultValue={filters.genre ?? ""}
+              className="mt-1 h-10 w-full rounded-md border bg-background px-3 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              <option value="">전체 장르</option>
+              {genreOptions.map((genre) => (
+                <option key={genre} value={genre}>
+                  {genre}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <Button type="submit">
+            <Search className="h-4 w-4" aria-hidden="true" />
+            검색
+          </Button>
+
+          {hasActiveFilters ? (
+            <Button asChild variant="outline">
+              <Link href={resetHref}>초기화</Link>
+            </Button>
+          ) : null}
+        </form>
+      </section>
 
       {concerts.length > 0 ? (
         <section className="mt-6 grid gap-4 lg:grid-cols-2">
@@ -174,9 +331,9 @@ export default async function ConcertListPage({
         </section>
       ) : (
         <section className="mt-6 rounded-lg border bg-card p-8 text-center">
-          <h2 className="text-lg font-semibold">등록된 공연이 없습니다</h2>
+          <h2 className="text-lg font-semibold">{emptyTitle}</h2>
           <p className="mt-2 text-sm text-muted-foreground">
-            공연 동기화 또는 seed 데이터를 넣은 뒤 공연 목록을 확인할 수 있습니다.
+            {emptyDescription}
           </p>
         </section>
       )}
