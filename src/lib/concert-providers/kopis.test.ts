@@ -11,7 +11,7 @@ describe("kopis concert provider", () => {
         prfpdfrom: "2026.08.15",
         prfpdto: "2026.08.16",
         fcltynm: "KSPO DOME",
-        poster: "https://example.com/poster.jpg",
+        poster: "http://www.kopis.or.kr/upload/pfmPoster/PF_TEST.gif",
         genrenm: "대중음악",
         area: "서울",
       },
@@ -41,6 +41,7 @@ describe("kopis concert provider", () => {
       priceMax: 165000,
       genre: "대중음악",
       bookingUrl: "https://tickets.example.com",
+      posterImageUrl: "https://kopis.or.kr/upload/pfmPoster/PF_TEST.gif",
     });
     expect(concert?.schedules[0]).toMatchObject({
       roundName: "공연 기간",

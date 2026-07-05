@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { CalendarDays, MapPin, MessageSquare, Ticket } from "lucide-react";
 
@@ -41,6 +42,32 @@ function parseScope(value: string | undefined): ConcertListScope {
   return "upcoming";
 }
 
+function ConcertPoster({
+  src,
+  title,
+}: {
+  src: string | null;
+  title: string;
+}) {
+  return (
+    <div className="relative aspect-[2/3] w-full overflow-hidden rounded-md border bg-secondary">
+      {src ? (
+        <Image
+          src={src}
+          alt={`${title} 포스터`}
+          fill
+          sizes="(min-width: 1024px) 150px, (min-width: 640px) 150px, calc(100vw - 4rem)"
+          className="object-cover"
+        />
+      ) : (
+        <div className="flex h-full items-center justify-center px-4 text-center text-sm text-muted-foreground">
+          포스터 준비 중
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default async function ConcertListPage({
   searchParams,
 }: ConcertListPageProps) {
@@ -78,65 +105,69 @@ export default async function ConcertListPage({
       </nav>
 
       {concerts.length > 0 ? (
-        <section className="mt-6 grid gap-4 md:grid-cols-2">
+        <section className="mt-6 grid gap-4 lg:grid-cols-2">
           {concerts.map((concert) => (
             <article
               key={concert.id}
               className="overflow-hidden rounded-lg border bg-card"
             >
-              <div
-                className="h-40 bg-secondary bg-cover bg-center"
-                style={{
-                  backgroundImage: concert.posterImageUrl
-                    ? `linear-gradient(90deg, rgb(0 0 0 / 0.62), rgb(0 0 0 / 0.08)), url(${concert.posterImageUrl})`
-                    : undefined,
-                }}
-              >
-                <div className="flex h-full flex-col justify-end p-5 text-white">
-                  <p className="text-sm opacity-85">{concert.artist}</p>
-                  <h2 className="mt-1 text-xl font-semibold">{concert.title}</h2>
-                </div>
-              </div>
-
-              <div className="space-y-4 p-5">
-                <div className="grid gap-2 text-sm text-muted-foreground">
-                  <p className="flex items-center gap-2">
-                    <CalendarDays className="h-4 w-4" aria-hidden="true" />
-                    {formatDateRange(concert.startDate, concert.endDate)}
-                  </p>
-                  <p className="flex items-center gap-2">
-                    <MapPin className="h-4 w-4" aria-hidden="true" />
-                    {concert.region} · {concert.venueName}
-                  </p>
-                  <p className="flex items-center gap-2">
-                    <Ticket className="h-4 w-4" aria-hidden="true" />
-                    {formatPriceRange(concert.priceMin, concert.priceMax)}
-                  </p>
+              <div className="grid sm:grid-cols-[150px_1fr]">
+                <div className="bg-secondary p-4">
+                  <ConcertPoster
+                    src={concert.posterImageUrl}
+                    title={concert.title}
+                  />
                 </div>
 
-                <div className="flex flex-wrap gap-2">
-                  {concert.genre ? (
+                <div className="flex min-w-0 flex-col justify-between gap-5 p-5">
+                  <div className="min-w-0">
+                    <p className="text-sm text-muted-foreground">
+                      {concert.artist}
+                    </p>
+                    <h2 className="mt-1 break-words text-xl font-semibold">
+                      {concert.title}
+                    </h2>
+                  </div>
+
+                  <div className="grid gap-2 text-sm text-muted-foreground">
+                    <p className="flex items-center gap-2">
+                      <CalendarDays className="h-4 w-4" aria-hidden="true" />
+                      {formatDateRange(concert.startDate, concert.endDate)}
+                    </p>
+                    <p className="flex items-center gap-2">
+                      <MapPin className="h-4 w-4" aria-hidden="true" />
+                      {concert.region} · {concert.venueName}
+                    </p>
+                    <p className="flex items-center gap-2">
+                      <Ticket className="h-4 w-4" aria-hidden="true" />
+                      {formatPriceRange(concert.priceMin, concert.priceMax)}
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    {concert.genre ? (
+                      <span className="rounded-md border bg-secondary px-2.5 py-1 text-xs text-secondary-foreground">
+                        {concert.genre}
+                      </span>
+                    ) : null}
                     <span className="rounded-md border bg-secondary px-2.5 py-1 text-xs text-secondary-foreground">
-                      {concert.genre}
+                      좌석 배치도 {concert.hasSeatMap ? "등록됨" : "미등록"}
                     </span>
-                  ) : null}
-                  <span className="rounded-md border bg-secondary px-2.5 py-1 text-xs text-secondary-foreground">
-                    좌석 배치도 {concert.hasSeatMap ? "등록됨" : "미등록"}
-                  </span>
-                  {concert.isSample ? (
-                    <span className="rounded-md border bg-secondary px-2.5 py-1 text-xs text-secondary-foreground">
-                      샘플 공연
+                    {concert.isSample ? (
+                      <span className="rounded-md border bg-secondary px-2.5 py-1 text-xs text-secondary-foreground">
+                        샘플 공연
+                      </span>
+                    ) : null}
+                    <span className="inline-flex items-center gap-1 rounded-md border bg-secondary px-2.5 py-1 text-xs text-secondary-foreground">
+                      <MessageSquare className="h-3.5 w-3.5" aria-hidden="true" />
+                      리뷰 {concert.reviewCount}
                     </span>
-                  ) : null}
-                  <span className="inline-flex items-center gap-1 rounded-md border bg-secondary px-2.5 py-1 text-xs text-secondary-foreground">
-                    <MessageSquare className="h-3.5 w-3.5" aria-hidden="true" />
-                    리뷰 {concert.reviewCount}
-                  </span>
-                </div>
+                  </div>
 
-                <Button asChild className="w-full">
-                  <Link href={`/concerts/${concert.id}`}>상세 보기</Link>
-                </Button>
+                  <Button asChild className="w-full">
+                    <Link href={`/concerts/${concert.id}`}>상세 보기</Link>
+                  </Button>
+                </div>
               </div>
             </article>
           ))}
