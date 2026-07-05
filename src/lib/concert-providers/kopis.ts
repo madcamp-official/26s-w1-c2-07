@@ -314,6 +314,14 @@ export async function fetchKopisConcerts(options: ExternalConcertFetchOptions) {
     searchParams.shcate = options.genreCode;
   }
 
+  if (options.regionCode) {
+    searchParams.signgucode = options.regionCode;
+  }
+
+  if (options.keyword) {
+    searchParams.shprfnm = options.keyword;
+  }
+
   const xmlText = await fetchKopisXml("pblprfr", searchParams);
   const listRecords = getKopisRecords(xmlText);
 

@@ -17,6 +17,8 @@ export type ConcertSyncOptions = {
   rows?: number;
   pages?: number;
   genreCode?: string;
+  regionCode?: string;
+  keyword?: string;
 };
 
 function clampInteger(value: number | undefined, fallback: number, min: number, max: number) {
@@ -152,6 +154,8 @@ export async function syncUpcomingConcerts(options: ConcertSyncOptions = {}) {
   const rows = clampInteger(options.rows, DEFAULT_SYNC_ROWS, 1, MAX_SYNC_ROWS);
   const pages = clampInteger(options.pages, DEFAULT_SYNC_PAGES, 1, MAX_SYNC_PAGES);
   const genreCode = options.genreCode ?? process.env.KOPIS_DEFAULT_GENRE_CODE;
+  const regionCode = options.regionCode;
+  const keyword = options.keyword;
   const { from, to } = getSyncDateRange(monthsAhead);
   const fetchedConcerts: ExternalConcertInput[] = [];
 
@@ -166,6 +170,8 @@ export async function syncUpcomingConcerts(options: ConcertSyncOptions = {}) {
       page,
       rows,
       genreCode,
+      regionCode,
+      keyword,
     });
 
     fetchedConcerts.push(...pageConcerts);

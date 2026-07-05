@@ -32,4 +32,6 @@ export type ExternalConcertFetchOptions = {
   page: number;
   rows: number;
   genreCode?: string;
+  regionCode?: string;
+  keyword?: string;
 };

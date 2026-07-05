@@ -35,6 +35,7 @@ test("concert list page renders with seeded or empty state", async ({ page }) =>
   await expect(
     page.getByRole("heading", { name: "다가오는 공연" }),
   ).toBeVisible();
+  await expect(page.getByRole("searchbox", { name: "검색어" })).toBeVisible();
   await expect(page.getByRole("link", { name: "샘플 공연" })).toHaveAttribute(
     "href",
     "/concerts?scope=samples",

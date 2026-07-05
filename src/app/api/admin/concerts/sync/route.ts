@@ -10,6 +10,8 @@ const syncRequestSchema = z.object({
   rows: z.coerce.number().int().min(1).max(50).optional(),
   pages: z.coerce.number().int().min(1).max(5).optional(),
   genreCode: z.string().trim().min(1).max(20).optional(),
+  regionCode: z.string().trim().min(1).max(20).optional(),
+  keyword: z.string().trim().min(1).max(100).optional(),
 });
 
 function getExpectedSyncSecret() {
@@ -38,6 +40,8 @@ function getQueryInput(request: Request) {
     rows: url.searchParams.get("rows") ?? undefined,
     pages: url.searchParams.get("pages") ?? undefined,
     genreCode: url.searchParams.get("genreCode") ?? undefined,
+    regionCode: url.searchParams.get("regionCode") ?? undefined,
+    keyword: url.searchParams.get("keyword") ?? undefined,
   };
 }
 
