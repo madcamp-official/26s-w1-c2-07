@@ -57,6 +57,19 @@ PLAYWRIGHT_BASE_URL=https://배포도메인 pnpm test:e2e
 15. 마이페이지에서 내 리뷰와 티켓팅 연습 기록이 표시되는지 확인한다.
 16. 마이페이지 또는 리뷰 화면에서 내 리뷰 삭제가 동작하는지 확인한다.
 
+## 공연 정보 동기화 확인
+
+KOPIS API 키와 동기화 secret이 설정된 환경에서 공연 정보 동기화를 확인한다.
+
+```bash
+curl -X POST http://localhost:3000/api/admin/concerts/sync \
+  -H "Authorization: Bearer $CONCERT_SYNC_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"monthsAhead":6,"rows":20,"pages":1}'
+```
+
+동기화 후 `/concerts`에서 다가오는 공연이 표시되는지 확인한다. API 키가 없거나 secret이 틀리면 동기화 API는 실패해야 한다.
+
 ## 배포 후 Smoke Test
 
 배포 URL에서 최소한 다음 항목을 확인한다.

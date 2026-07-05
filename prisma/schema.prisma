@@ -65,11 +65,25 @@ model Concert {
   priceMax         Int
   posterImageUrl   String?
   description      String?
+  genre            String?
+  bookingUrl       String?
+  ticketOpenAt     DateTime?
+  externalSource   String?
+  externalId       String?
+  syncedAt         DateTime?
+  rawExternalData  Json?
+  isVisible        Boolean            @default(true)
+  isSample         Boolean            @default(false)
   createdAt        DateTime           @default(now())
   schedules        ConcertSchedule[]
   seatMaps         SeatMap[]
   reviews          Review[]
   practiceSessions PracticeSession[]
+
+  @@unique([externalSource, externalId])
+  @@index([startDate])
+  @@index([externalSource, syncedAt])
+  @@index([isSample, isVisible])
 }
 
 model ConcertSchedule {

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { z } from "zod";
 import {
   CalendarDays,
+  ExternalLink,
   ImageUp,
   MapPin,
   MessageSquare,
@@ -60,6 +61,13 @@ export default async function ConcertDetailPage({
               <h1 className="mt-2 text-3xl font-semibold tracking-normal">
                 {concert.title}
               </h1>
+              {concert.isSample ? (
+                <div className="mt-3">
+                  <span className="rounded-md border border-white/30 bg-white/15 px-2.5 py-1 text-xs text-white">
+                    샘플 공연
+                  </span>
+                </div>
+              ) : null}
               <div className="mt-5 grid gap-2 text-sm text-white/85 sm:grid-cols-2">
                 <p className="flex items-center gap-2">
                   <CalendarDays className="h-4 w-4" aria-hidden="true" />
@@ -73,6 +81,12 @@ export default async function ConcertDetailPage({
                   <Ticket className="h-4 w-4" aria-hidden="true" />
                   {formatPriceRange(concert.priceMin, concert.priceMax)}
                 </p>
+                {concert.genre ? (
+                  <p className="flex items-center gap-2">
+                    <Ticket className="h-4 w-4" aria-hidden="true" />
+                    {concert.genre}
+                  </p>
+                ) : null}
                 <p className="flex items-center gap-2">
                   <MessageSquare className="h-4 w-4" aria-hidden="true" />
                   리뷰 {concert.reviewCount}
@@ -86,6 +100,19 @@ export default async function ConcertDetailPage({
               <p className="text-sm leading-6 text-muted-foreground">
                 {concert.description}
               </p>
+            ) : null}
+
+            {concert.bookingUrl ? (
+              <Button asChild variant="outline" size="sm">
+                <a
+                  href={concert.bookingUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <ExternalLink className="h-4 w-4" aria-hidden="true" />
+                  예매 정보 보기
+                </a>
+              </Button>
             ) : null}
 
             <section>

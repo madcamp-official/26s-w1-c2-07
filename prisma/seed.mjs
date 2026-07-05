@@ -50,6 +50,8 @@ const concerts = [
     endDate: new Date("2026-08-16T18:00:00+09:00"),
     priceMin: 99000,
     priceMax: 165000,
+    isSample: true,
+    isVisible: true,
     posterImageUrl:
       "https://images.unsplash.com/photo-1501386761578-eac5c94b800a?auto=format&fit=crop&w=900&q=80",
     description:
@@ -79,6 +81,8 @@ const concerts = [
     endDate: new Date("2026-09-06T17:00:00+09:00"),
     priceMin: 88000,
     priceMax: 143000,
+    isSample: true,
+    isVisible: true,
     posterImageUrl:
       "https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?auto=format&fit=crop&w=900&q=80",
     description:
@@ -108,6 +112,8 @@ const concerts = [
     endDate: new Date("2026-10-10T18:30:00+09:00"),
     priceMin: 77000,
     priceMax: 132000,
+    isSample: true,
+    isVisible: true,
     posterImageUrl:
       "https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?auto=format&fit=crop&w=900&q=80",
     description:
@@ -131,6 +137,8 @@ const concerts = [
     endDate: new Date("2026-11-22T17:00:00+09:00"),
     priceMin: 99000,
     priceMax: 154000,
+    isSample: true,
+    isVisible: true,
     posterImageUrl:
       "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=900&q=80",
     description:
@@ -194,4 +202,3 @@ main()
   .finally(async () => {
     await prisma.$disconnect();
   });
-
