@@ -8,7 +8,7 @@ import type {
 
 export const KOPIS_SOURCE = "kopis";
 
-const DEFAULT_KOPIS_BASE_URL = "https://www.kopis.or.kr/openApi/restful";
+const DEFAULT_KOPIS_BASE_URL = "http://www.kopis.or.kr/openApi/restful";
 const KST_TIME_ZONE = "Asia/Seoul";
 const FALLBACK_ARTIST = "출연진 미정";
 const FALLBACK_START_TIME = "시간 미정";

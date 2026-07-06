@@ -1,6 +1,9 @@
 import { Prisma } from "@prisma/client";
 
-import { fetchKopisConcerts, KOPIS_SOURCE } from "@/lib/concert-providers/kopis";
+import {
+  fetchKopisConcerts,
+  KOPIS_SOURCE,
+} from "@/lib/concert-providers/kopis";
 import type { ExternalConcertInput } from "@/lib/concert-providers/types";
 import { prisma } from "@/lib/prisma";
 
@@ -21,7 +24,12 @@ export type ConcertSyncOptions = {
   keyword?: string;
 };
 
-function clampInteger(value: number | undefined, fallback: number, min: number, max: number) {
+function clampInteger(
+  value: number | undefined,
+  fallback: number,
+  min: number,
+  max: number,
+) {
   if (!Number.isInteger(value)) {
     return fallback;
   }
@@ -48,136 +56,166 @@ function getScheduleDateKey(date: Date) {
 async function upsertExternalConcert(concert: ExternalConcertInput) {
   const syncedAt = new Date();
 
-  return prisma.$transaction(async (tx) => {
-    const upsertedConcert = await tx.concert.upsert({
-      where: {
-        externalSource_externalId: {
+  return prisma.$transaction(
+    async (tx) => {
+      const upsertedConcert = await tx.concert.upsert({
+        where: {
+          externalSource_externalId: {
+            externalSource: concert.externalSource,
+            externalId: concert.externalId,
+          },
+        },
+        update: {
+          title: concert.title,
+          artist: concert.artist,
+          venueName: concert.venueName,
+          region: concert.region,
+          startDate: concert.startDate,
+          endDate: concert.endDate,
+          priceMin: concert.priceMin,
+          priceMax: concert.priceMax,
+          posterImageUrl: concert.posterImageUrl ?? null,
+          description: concert.description ?? null,
+          genre: concert.genre ?? null,
+          bookingUrl: concert.bookingUrl ?? null,
+          ticketOpenAt: concert.ticketOpenAt ?? null,
+          syncedAt,
+          rawExternalData:
+            (concert.rawExternalData as Prisma.InputJsonValue | undefined) ??
+            Prisma.JsonNull,
+          isVisible: true,
+          isSample: false,
+        },
+        create: {
+          title: concert.title,
+          artist: concert.artist,
+          venueName: concert.venueName,
+          region: concert.region,
+          startDate: concert.startDate,
+          endDate: concert.endDate,
+          priceMin: concert.priceMin,
+          priceMax: concert.priceMax,
+          posterImageUrl: concert.posterImageUrl ?? null,
+          description: concert.description ?? null,
+          genre: concert.genre ?? null,
+          bookingUrl: concert.bookingUrl ?? null,
+          ticketOpenAt: concert.ticketOpenAt ?? null,
           externalSource: concert.externalSource,
           externalId: concert.externalId,
-        },
-      },
-      update: {
-        title: concert.title,
-        artist: concert.artist,
-        venueName: concert.venueName,
-        region: concert.region,
-        startDate: concert.startDate,
-        endDate: concert.endDate,
-        priceMin: concert.priceMin,
-        priceMax: concert.priceMax,
-        posterImageUrl: concert.posterImageUrl ?? null,
-        description: concert.description ?? null,
-        genre: concert.genre ?? null,
-        bookingUrl: concert.bookingUrl ?? null,
-        ticketOpenAt: concert.ticketOpenAt ?? null,
-        syncedAt,
-        rawExternalData:
-          (concert.rawExternalData as Prisma.InputJsonValue | undefined) ??
-          Prisma.JsonNull,
-        isVisible: true,
-        isSample: false,
-      },
-      create: {
-        title: concert.title,
-        artist: concert.artist,
-        venueName: concert.venueName,
-        region: concert.region,
-        startDate: concert.startDate,
-        endDate: concert.endDate,
-        priceMin: concert.priceMin,
-        priceMax: concert.priceMax,
-        posterImageUrl: concert.posterImageUrl ?? null,
-        description: concert.description ?? null,
-        genre: concert.genre ?? null,
-        bookingUrl: concert.bookingUrl ?? null,
-        ticketOpenAt: concert.ticketOpenAt ?? null,
-        externalSource: concert.externalSource,
-        externalId: concert.externalId,
-        syncedAt,
-        rawExternalData:
-          (concert.rawExternalData as Prisma.InputJsonValue | undefined) ??
-          Prisma.JsonNull,
-        isVisible: true,
-        isSample: false,
-      },
-      select: {
-        id: true,
-      },
-    });
-
-    if (concert.schedules.length > 0) {
-      const existingSchedules = await tx.concertSchedule.findMany({
-        where: {
-          concertId: upsertedConcert.id,
-        },
-        orderBy: {
-          performanceDate: "asc",
+          syncedAt,
+          rawExternalData:
+            (concert.rawExternalData as Prisma.InputJsonValue | undefined) ??
+            Prisma.JsonNull,
+          isVisible: true,
+          isSample: false,
         },
         select: {
           id: true,
-          performanceDate: true,
         },
       });
 
-      const existingSchedulesByDate = new Map(
-        existingSchedules.map((schedule) => [
-          getScheduleDateKey(schedule.performanceDate),
-          schedule,
-        ]),
-      );
-      const keptScheduleIds = new Set<string>();
+      if (concert.schedules.length > 0) {
+        const existingSchedules = await tx.concertSchedule.findMany({
+          where: {
+            concertId: upsertedConcert.id,
+          },
+          orderBy: {
+            performanceDate: "asc",
+          },
+          select: {
+            id: true,
+            performanceDate: true,
+            roundName: true,
+            startTime: true,
+          },
+        });
 
-      for (const schedule of concert.schedules) {
-        const existingSchedule = existingSchedulesByDate.get(
-          getScheduleDateKey(schedule.performanceDate),
+        const existingSchedulesByDate = new Map(
+          existingSchedules.map((schedule) => [
+            getScheduleDateKey(schedule.performanceDate),
+            schedule,
+          ]),
         );
+        const keptScheduleIds = new Set<string>();
+        const schedulesToCreate: Prisma.ConcertScheduleCreateManyInput[] = [];
+        const schedulesToUpdate: Array<{
+          id: string;
+          data: {
+            performanceDate: Date;
+            roundName: string;
+            startTime: string;
+          };
+        }> = [];
 
-        if (existingSchedule && !keptScheduleIds.has(existingSchedule.id)) {
-          await tx.concertSchedule.update({
-            where: {
-              id: existingSchedule.id,
-            },
-            data: {
-              performanceDate: schedule.performanceDate,
-              roundName: schedule.roundName,
-              startTime: schedule.startTime,
-            },
-          });
-          keptScheduleIds.add(existingSchedule.id);
-        } else {
-          const createdSchedule = await tx.concertSchedule.create({
-            data: {
+        for (const schedule of concert.schedules) {
+          const existingSchedule = existingSchedulesByDate.get(
+            getScheduleDateKey(schedule.performanceDate),
+          );
+
+          if (existingSchedule && !keptScheduleIds.has(existingSchedule.id)) {
+            keptScheduleIds.add(existingSchedule.id);
+
+            if (
+              existingSchedule.roundName !== schedule.roundName ||
+              existingSchedule.startTime !== schedule.startTime
+            ) {
+              schedulesToUpdate.push({
+                id: existingSchedule.id,
+                data: {
+                  performanceDate: schedule.performanceDate,
+                  roundName: schedule.roundName,
+                  startTime: schedule.startTime,
+                },
+              });
+            }
+          } else {
+            schedulesToCreate.push({
               concertId: upsertedConcert.id,
               performanceDate: schedule.performanceDate,
               roundName: schedule.roundName,
               startTime: schedule.startTime,
+            });
+          }
+        }
+
+        for (const schedule of schedulesToUpdate) {
+          await tx.concertSchedule.update({
+            where: {
+              id: schedule.id,
             },
-            select: {
-              id: true,
+            data: schedule.data,
+          });
+        }
+
+        if (schedulesToCreate.length > 0) {
+          await tx.concertSchedule.createMany({
+            data: schedulesToCreate,
+          });
+        }
+
+        const staleScheduleIds = existingSchedules
+          .filter((schedule) => !keptScheduleIds.has(schedule.id))
+          .map((schedule) => schedule.id);
+
+        if (staleScheduleIds.length > 0) {
+          await tx.concertSchedule.deleteMany({
+            where: {
+              concertId: upsertedConcert.id,
+              id: {
+                in: staleScheduleIds,
+              },
             },
           });
-          keptScheduleIds.add(createdSchedule.id);
         }
       }
 
-      const staleScheduleIds = existingSchedules
-        .filter((schedule) => !keptScheduleIds.has(schedule.id))
-        .map((schedule) => schedule.id);
-
-      if (staleScheduleIds.length > 0) {
-        await tx.concertSchedule.deleteMany({
-          where: {
-            concertId: upsertedConcert.id,
-            id: {
-              in: staleScheduleIds,
-            },
-          },
-        });
-      }
-    }
-
-    return upsertedConcert.id;
-  });
+      return upsertedConcert.id;
+    },
+    {
+      maxWait: 10_000,
+      timeout: 20_000,
+    },
+  );
 }
 
 export async function syncUpcomingConcerts(options: ConcertSyncOptions = {}) {
@@ -189,7 +227,12 @@ export async function syncUpcomingConcerts(options: ConcertSyncOptions = {}) {
     MAX_SYNC_MONTHS_AHEAD,
   );
   const rows = clampInteger(options.rows, DEFAULT_SYNC_ROWS, 1, MAX_SYNC_ROWS);
-  const pages = clampInteger(options.pages, DEFAULT_SYNC_PAGES, 1, MAX_SYNC_PAGES);
+  const pages = clampInteger(
+    options.pages,
+    DEFAULT_SYNC_PAGES,
+    1,
+    MAX_SYNC_PAGES,
+  );
   const genreCode = options.genreCode ?? process.env.KOPIS_DEFAULT_GENRE_CODE;
   const regionCode = options.regionCode;
   const keyword = options.keyword;
