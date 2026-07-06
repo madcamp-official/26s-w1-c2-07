@@ -20,7 +20,8 @@ type RegisteredConcertWorkspaceProps = {
   title: string;
   description: string;
   sidebarTitle: string;
-  tip: string;
+  tip?: string;
+  showTip?: boolean;
   concerts: RegisteredConcertSummary[];
   selectedConcertId: string | null;
   emptyTitle: string;
@@ -117,6 +118,7 @@ export function RegisteredConcertWorkspace({
   description,
   sidebarTitle,
   tip,
+  showTip = true,
   concerts,
   selectedConcertId,
   emptyTitle,
@@ -174,7 +176,7 @@ export function RegisteredConcertWorkspace({
                 </span>
               </div>
 
-              <div className="mt-4 space-y-3">
+              <div className="mt-4 max-h-[calc(100vh-260px)] space-y-3 overflow-y-auto pr-1">
                 {concerts.map((concert) => (
                   <RegisteredConcertCard
                     key={concert.id}
@@ -186,28 +188,32 @@ export function RegisteredConcertWorkspace({
               </div>
             </section>
 
-            <section className="rounded-lg border bg-primary/5 p-4 text-sm shadow-sm">
-              <div className="flex gap-3">
-                <Sparkles
-                  className="mt-0.5 h-4 w-4 shrink-0 text-primary"
-                  aria-hidden="true"
-                />
-                <div>
-                  <p className="font-black text-primary">TIP</p>
-                  <p className="mt-2 leading-6 text-muted-foreground">{tip}</p>
+            {showTip && tip ? (
+              <section className="rounded-lg border bg-primary/5 p-4 text-sm shadow-sm">
+                <div className="flex gap-3">
+                  <Sparkles
+                    className="mt-0.5 h-4 w-4 shrink-0 text-primary"
+                    aria-hidden="true"
+                  />
+                  <div>
+                    <p className="font-black text-primary">TIP</p>
+                    <p className="mt-2 leading-6 text-muted-foreground">
+                      {tip}
+                    </p>
+                  </div>
                 </div>
-              </div>
-              <Button
-                asChild
-                variant="outline"
-                className="mt-4 w-full bg-background"
-              >
-                <Link href="/concerts">
-                  좌석 배치도 추가 등록
-                  <ChevronRight className="h-4 w-4" aria-hidden="true" />
-                </Link>
-              </Button>
-            </section>
+                <Button
+                  asChild
+                  variant="outline"
+                  className="mt-4 w-full bg-background"
+                >
+                  <Link href="/concerts">
+                    좌석 배치도 추가 등록
+                    <ChevronRight className="h-4 w-4" aria-hidden="true" />
+                  </Link>
+                </Button>
+              </section>
+            ) : null}
           </aside>
 
           <section className="min-w-0">
