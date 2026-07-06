@@ -1,9 +1,13 @@
 import { prisma } from "@/lib/prisma";
 
-export async function getLatestSeatMapForConcert(concertId: string) {
+export async function getLatestSeatMapForConcert(
+  concertId: string,
+  userId: string,
+) {
   return prisma.seatMap.findFirst({
     where: {
       concertId,
+      createdBy: userId,
     },
     include: {
       zones: {

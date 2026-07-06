@@ -1,0 +1,9 @@
+ALTER TABLE "Review" ADD COLUMN "seatFloor" TEXT;
+ALTER TABLE "Review" ADD COLUMN "seatSection" TEXT;
+ALTER TABLE "Review" ADD COLUMN "seatRow" TEXT;
+ALTER TABLE "Review" ADD COLUMN "seatNumber" TEXT;
+
+ALTER TABLE "Review" DROP CONSTRAINT "Review_zoneId_fkey";
+ALTER TABLE "Review" ALTER COLUMN "zoneId" DROP NOT NULL;
+ALTER TABLE "Review" ADD CONSTRAINT "Review_zoneId_fkey"
+  FOREIGN KEY ("zoneId") REFERENCES "SeatZone"("id") ON DELETE SET NULL ON UPDATE CASCADE;

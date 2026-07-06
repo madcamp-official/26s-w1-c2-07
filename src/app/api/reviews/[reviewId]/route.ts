@@ -33,14 +33,16 @@ async function getStorageClient() {
   return createSupabaseServerClient();
 }
 
-async function removeReviewImage(imageUrl: string | null) {
-  if (!imageUrl) {
-    return;
-  }
+async function removeReviewImages(imageUrls: string[]) {
+  const storagePaths = Array.from(
+    new Set(
+      imageUrls
+        .map((imageUrl) => getReviewImageStoragePathFromPublicUrl(imageUrl))
+        .filter((storagePath): storagePath is string => Boolean(storagePath)),
+    ),
+  );
 
-  const storagePath = getReviewImageStoragePathFromPublicUrl(imageUrl);
-
-  if (!storagePath) {
+  if (storagePaths.length === 0) {
     return;
   }
 
@@ -50,7 +52,7 @@ async function removeReviewImage(imageUrl: string | null) {
     return;
   }
 
-  await storageClient.storage.from(REVIEW_IMAGE_BUCKET).remove([storagePath]);
+  await storageClient.storage.from(REVIEW_IMAGE_BUCKET).remove(storagePaths);
 }
 
 async function getReviewForMutation(reviewId: string) {
@@ -62,6 +64,7 @@ async function getReviewForMutation(reviewId: string) {
       id: true,
       userId: true,
       imageUrl: true,
+      imageUrls: true,
     },
   });
 }
@@ -154,7 +157,13 @@ export async function DELETE(
       id: review.id,
     },
   });
-  await removeReviewImage(review.imageUrl);
+  await removeReviewImages(
+    review.imageUrls.length > 0
+      ? review.imageUrls
+      : review.imageUrl
+        ? [review.imageUrl]
+        : [],
+  );
 
   return apiData({
     deleted: true,

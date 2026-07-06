@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { getCurrentUser } from "@/lib/auth";
 import {
   getConcertFilterOptions,
   getConcertList,
@@ -122,7 +123,10 @@ function ConcertPoster({
 export default async function ConcertListPage({
   searchParams,
 }: ConcertListPageProps) {
-  const resolvedSearchParams = await searchParams;
+  const [resolvedSearchParams, user] = await Promise.all([
+    searchParams,
+    getCurrentUser(),
+  ]);
   const scope = parseScope(resolvedSearchParams?.scope);
   const filters = {
     q: parseFilterValue(resolvedSearchParams?.q, 100),
@@ -133,6 +137,7 @@ export default async function ConcertListPage({
     getConcertList({
       scope,
       ...filters,
+      seatMapOwnerId: user?.id ?? null,
     }),
     getConcertFilterOptions({
       scope,
