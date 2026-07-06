@@ -3,10 +3,13 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { z } from "zod";
 import {
+  ArrowRight,
   CalendarDays,
+  ChevronRight,
   ExternalLink,
   ImageUp,
   MapPin,
+  Megaphone,
   MessageSquare,
   PlayCircle,
   Ticket,
@@ -33,14 +36,14 @@ function ConcertPoster({
   title: string;
 }) {
   return (
-    <div className="relative aspect-[2/3] w-full overflow-hidden rounded-lg border bg-secondary">
+    <div className="relative aspect-square w-full overflow-hidden rounded-lg border bg-secondary shadow-sm">
       {src ? (
         <Image
           src={src}
           alt={`${title} 포스터`}
           fill
           priority
-          sizes="(min-width: 768px) 220px, 288px"
+          sizes="(min-width: 1024px) 260px, 70vw"
           className="object-cover"
         />
       ) : (
@@ -49,6 +52,39 @@ function ConcertPoster({
         </div>
       )}
     </div>
+  );
+}
+
+function ActionCard({
+  href,
+  icon,
+  title,
+  description,
+}: {
+  href: string;
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className="group flex min-h-32 items-center gap-5 rounded-lg border bg-card p-6 shadow-sm transition hover:-translate-y-0.5 hover:border-primary/45 hover:shadow-md"
+    >
+      <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+        {icon}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-xl font-black">{title}</span>
+        <span className="mt-2 block text-sm leading-6 text-muted-foreground">
+          {description}
+        </span>
+      </span>
+      <ChevronRight
+        className="h-6 w-6 text-muted-foreground transition group-hover:translate-x-1 group-hover:text-primary"
+        aria-hidden="true"
+      />
+    </Link>
   );
 }
 
@@ -71,177 +107,184 @@ export default async function ConcertDetailPage({
   const isSeatMapAnalyzed =
     concert.latestSeatMap?.analysisStatus === "success" &&
     concert.latestSeatMap.zoneCount > 0;
+  const infoRows = [
+    {
+      label: "공연소개",
+      value: concert.description ?? "등록된 공연 소개가 없습니다.",
+    },
+    {
+      label: "공연일정",
+      value: formatDateRange(concert.startDate, concert.endDate),
+    },
+    {
+      label: "공연장",
+      value: `${concert.region} · ${concert.venueName}`,
+    },
+    {
+      label: "가격정보",
+      value: formatPriceRange(concert.priceMin, concert.priceMax),
+    },
+    {
+      label: "좌석 데이터",
+      value: concert.hasSeatMap
+        ? `${concert.latestSeatMap?.zoneCount ?? 0}개 구역 / ${concert.latestSeatMap?.analysisStatus ?? "분석 전"}`
+        : "등록된 좌석 배치도가 없습니다.",
+    },
+  ];
 
   return (
-    <main className="mx-auto w-full max-w-6xl px-6 py-8">
-      <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
-        <section className="rounded-lg border bg-card p-6">
-          <div className="grid gap-6 md:grid-cols-[220px_minmax(0,1fr)]">
-            <div className="mx-auto w-full max-w-72 md:max-w-none">
-              <ConcertPoster
-                src={concert.posterImageUrl}
-                title={concert.title}
-              />
-            </div>
+    <main className="mx-auto w-full max-w-7xl px-5 py-8 sm:px-8">
+      <nav className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+        <Link href="/" className="hover:text-primary">
+          홈
+        </Link>
+        <ChevronRight className="h-4 w-4" aria-hidden="true" />
+        <Link href="/concerts" className="hover:text-primary">
+          공연
+        </Link>
+        <ChevronRight className="h-4 w-4" aria-hidden="true" />
+        <span className="text-foreground">공연 상세</span>
+      </nav>
 
-            <div className="min-w-0 space-y-6">
-              <div>
-                <p className="text-sm text-muted-foreground">{concert.artist}</p>
-                <h1 className="mt-2 break-words text-3xl font-semibold tracking-normal">
-                  {concert.title}
-                </h1>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {concert.genre ? (
-                    <span className="rounded-md border bg-secondary px-2.5 py-1 text-xs text-secondary-foreground">
-                      {concert.genre}
-                    </span>
-                  ) : null}
-                  {concert.isSample ? (
-                    <span className="rounded-md border bg-secondary px-2.5 py-1 text-xs text-secondary-foreground">
-                      샘플 공연
-                    </span>
-                  ) : null}
-                </div>
+      <section className="mt-10 grid gap-10 lg:grid-cols-[minmax(0,1fr)_460px]">
+        <div>
+          <div className="grid gap-8 md:grid-cols-[260px_minmax(0,1fr)]">
+            <ConcertPoster src={concert.posterImageUrl} title={concert.title} />
+
+            <div className="min-w-0">
+              <div className="flex flex-wrap gap-2">
+                <span className="rounded-md bg-primary/12 px-3 py-1 text-sm font-bold text-primary">
+                  {concert.hasSeatMap ? "등록됨" : "배치도 미등록"}
+                </span>
+                {concert.genre ? (
+                  <span className="rounded-md bg-secondary px-3 py-1 text-sm font-semibold text-secondary-foreground">
+                    {concert.genre}
+                  </span>
+                ) : null}
+                {concert.isSample ? (
+                  <span className="rounded-md bg-secondary px-3 py-1 text-sm font-semibold text-secondary-foreground">
+                    샘플 공연
+                  </span>
+                ) : null}
               </div>
 
-              <div className="grid gap-2 text-sm text-muted-foreground sm:grid-cols-2">
+              <h1 className="mt-5 break-words text-4xl font-black leading-tight tracking-normal">
+                {concert.title}
+              </h1>
+
+              <div className="mt-6 space-y-3 text-base font-medium text-muted-foreground">
                 <p className="flex items-center gap-2">
-                  <CalendarDays className="h-4 w-4" aria-hidden="true" />
+                  <MapPin className="h-5 w-5 text-primary" aria-hidden="true" />
+                  {concert.venueName}
+                </p>
+                <p className="flex items-center gap-2">
+                  <CalendarDays className="h-5 w-5 text-primary" aria-hidden="true" />
                   {formatDateRange(concert.startDate, concert.endDate)}
                 </p>
                 <p className="flex items-center gap-2">
-                  <MapPin className="h-4 w-4" aria-hidden="true" />
-                  {concert.region} · {concert.venueName}
-                </p>
-                <p className="flex items-center gap-2">
-                  <Ticket className="h-4 w-4" aria-hidden="true" />
+                  <Ticket className="h-5 w-5 text-primary" aria-hidden="true" />
                   {formatPriceRange(concert.priceMin, concert.priceMax)}
                 </p>
-                <p className="flex items-center gap-2">
-                  <MessageSquare className="h-4 w-4" aria-hidden="true" />
-                  리뷰 {concert.reviewCount}
-                </p>
               </div>
 
-              {concert.description ? (
-                <p className="text-sm leading-6 text-muted-foreground">
-                  {concert.description}
-                </p>
-              ) : null}
-
-              {concert.bookingUrl ? (
-                <Button asChild variant="outline" size="sm">
-                  <a
-                    href={concert.bookingUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    <ExternalLink className="h-4 w-4" aria-hidden="true" />
-                    예매 정보 보기
-                  </a>
-                </Button>
-              ) : null}
-
-              <section>
-                <h2 className="text-lg font-semibold">공연 일정</h2>
-                <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                  {concert.schedules.map((schedule) => (
-                    <div key={schedule.id} className="rounded-md border p-4">
-                      <p className="font-medium">{schedule.roundName}</p>
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        {formatDateTime(schedule.performanceDate)}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              </section>
+              <div className="mt-5 flex flex-wrap gap-2">
+                <span className="rounded-md bg-muted px-3 py-1.5 text-sm font-semibold">
+                  리뷰 {concert.reviewCount}개
+                </span>
+                <span className="rounded-md bg-muted px-3 py-1.5 text-sm font-semibold">
+                  연습 기록 {concert.practiceSessionCount}개
+                </span>
+                {isSeatMapAnalyzed ? (
+                  <span className="rounded-md bg-primary/10 px-3 py-1.5 text-sm font-semibold text-primary">
+                    AI 분석 완료
+                  </span>
+                ) : null}
+              </div>
             </div>
           </div>
-        </section>
 
-        <aside className="space-y-4">
-          <section className="rounded-lg border bg-card p-5">
-            <h2 className="text-lg font-semibold">좌석 데이터</h2>
-            {concert.latestSeatMap ? (
-              <div className="mt-4 overflow-hidden rounded-md border bg-secondary">
-                <div
-                  className="min-h-44 bg-contain bg-center bg-no-repeat"
-                  style={{
-                    backgroundImage: `url(${concert.latestSeatMap.imageUrl})`,
-                  }}
-                />
-              </div>
-            ) : null}
-            <div className="mt-4 grid gap-3 text-sm">
-              <div className="flex items-center justify-between border-b pb-3">
-                <span className="text-muted-foreground">좌석 배치도</span>
-                <span>{concert.hasSeatMap ? "등록됨" : "미등록"}</span>
-              </div>
-              <div className="flex items-center justify-between border-b pb-3">
-                <span className="text-muted-foreground">분석 상태</span>
-                <span>{concert.latestSeatMap?.analysisStatus ?? "없음"}</span>
-              </div>
-              <div className="flex items-center justify-between border-b pb-3">
-                <span className="text-muted-foreground">좌석 구역</span>
-                <span>{concert.latestSeatMap?.zoneCount ?? 0}개</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">리뷰</span>
-                <span>{concert.reviewCount}개</span>
-              </div>
-            </div>
-          </section>
+          <div className="mt-10 border-t pt-8">
+            <dl className="grid gap-x-8 gap-y-5 text-sm md:grid-cols-[140px_minmax(0,1fr)]">
+              {infoRows.map((row) => (
+                <div key={row.label} className="contents">
+                  <dt className="font-black text-foreground">{row.label}</dt>
+                  <dd className="leading-6 text-muted-foreground">{row.value}</dd>
+                </div>
+              ))}
+            </dl>
 
-          <section className="rounded-lg border bg-card p-5">
-            <h2 className="text-lg font-semibold">다음 작업</h2>
-            <div className="mt-4 grid gap-2">
-              <Button asChild>
-                <Link href={`/concerts/${concert.id}/seat-map`}>
-                  <ImageUp className="h-4 w-4" aria-hidden="true" />
-                  {concert.hasSeatMap ? "좌석 배치도 다시 업로드" : "좌석 배치도 업로드"}
-                </Link>
+            {concert.bookingUrl ? (
+              <Button asChild variant="outline" className="mt-7">
+                <a href={concert.bookingUrl} target="_blank" rel="noreferrer">
+                  예매 정보 보기
+                  <ExternalLink className="h-4 w-4" aria-hidden="true" />
+                </a>
               </Button>
+            ) : null}
+          </div>
 
-              {concert.hasSeatMap ? (
-                <Button asChild variant="outline">
-                  <Link href={`/concerts/${concert.id}/seat-map`}>
-                    <WandSparkles className="h-4 w-4" aria-hidden="true" />
-                    AI 분석 및 결과 확인
-                  </Link>
-                </Button>
-              ) : null}
-
-              {isSeatMapAnalyzed ? (
-                <>
-                  <Button asChild variant="outline">
-                    <Link href={`/concerts/${concert.id}/practice`}>
-                      <PlayCircle className="h-4 w-4" aria-hidden="true" />
-                      티켓팅 연습 시작
-                    </Link>
-                  </Button>
-                  <Button asChild variant="outline">
-                    <Link href={`/concerts/${concert.id}/reviews`}>
-                      <MessageSquare className="h-4 w-4" aria-hidden="true" />
-                      좌석 리뷰 보기
-                    </Link>
-                  </Button>
-                </>
-              ) : (
-                <>
-                  <Button type="button" variant="outline" disabled>
-                    <PlayCircle className="h-4 w-4" aria-hidden="true" />
-                    티켓팅 연습 시작
-                  </Button>
-                  <Button type="button" variant="outline" disabled>
-                    <MessageSquare className="h-4 w-4" aria-hidden="true" />
-                    좌석 리뷰 보기
-                  </Button>
-                </>
-              )}
+          <section className="mt-10 rounded-lg border bg-card p-5 shadow-sm">
+            <h2 className="text-lg font-black">공연 일정</h2>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              {concert.schedules.map((schedule) => (
+                <div key={schedule.id} className="rounded-md border bg-secondary/60 p-4">
+                  <p className="font-bold">{schedule.roundName}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {formatDateTime(schedule.performanceDate)}
+                  </p>
+                </div>
+              ))}
             </div>
           </section>
+        </div>
+
+        <aside className="space-y-5 lg:border-l lg:pl-10">
+          <ActionCard
+            href={`/concerts/${concert.id}/seat-map`}
+            icon={<ImageUp className="h-8 w-8" aria-hidden="true" />}
+            title={concert.hasSeatMap ? "배치도 관리" : "배치도 등록"}
+            description="공연장의 좌석 배치도를 등록하고 AI 분석 결과를 확인하세요."
+          />
+          <ActionCard
+            href={`/concerts/${concert.id}/practice`}
+            icon={<PlayCircle className="h-8 w-8" aria-hidden="true" />}
+            title="티켓팅 연습"
+            description="사이트별 예매 흐름과 좌석 선택 과정을 실전처럼 연습하세요."
+          />
+          <ActionCard
+            href={`/concerts/${concert.id}/reviews`}
+            icon={<MessageSquare className="h-8 w-8" aria-hidden="true" />}
+            title="좌석 리뷰"
+            description="다른 사람들의 좌석 후기를 확인하고 나의 리뷰도 남겨보세요."
+          />
+
+          <div className="rounded-lg border bg-primary/5 p-5 text-sm text-muted-foreground">
+            <div className="flex items-start gap-3">
+              <Megaphone className="mt-0.5 h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
+              <p>
+                공연 일정 및 좌석 배치는 주최측 사정에 따라 변경될 수 있습니다.
+                연습용 가상 좌석은 실제 좌석 정보와 다를 수 있습니다.
+              </p>
+            </div>
+          </div>
+
+          {concert.latestSeatMap ? (
+            <Button asChild className="w-full" size="lg">
+              <Link href={`/concerts/${concert.id}/seat-map`}>
+                AI 분석 결과 보기
+                <WandSparkles className="h-4 w-4" aria-hidden="true" />
+              </Link>
+            </Button>
+          ) : (
+            <Button asChild className="w-full" size="lg">
+              <Link href={`/concerts/${concert.id}/seat-map`}>
+                배치도 업로드하기
+                <ArrowRight className="h-4 w-4" aria-hidden="true" />
+              </Link>
+            </Button>
+          )}
         </aside>
-      </div>
+      </section>
     </main>
   );
 }

@@ -318,16 +318,16 @@ export function MyPageClient({
   }
 
   return (
-    <main className="mx-auto w-full max-w-6xl px-6 py-8">
-      <section className="rounded-lg border bg-card p-6">
+    <main className="mx-auto w-full max-w-7xl px-5 py-8 sm:px-8">
+      <section className="rounded-lg border bg-card p-6 shadow-sm">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
           <div className="flex items-start gap-4">
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-md border bg-secondary">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
               <UserRound className="h-5 w-5" aria-hidden="true" />
             </div>
             <div>
               <p className="text-sm text-muted-foreground">마이페이지</p>
-              <h1 className="mt-1 text-2xl font-semibold">{displayName}</h1>
+              <h1 className="mt-1 text-2xl font-black">{displayName}</h1>
               <p className="mt-2 text-sm text-muted-foreground">
                 {initialUser.email}
               </p>
@@ -384,12 +384,12 @@ export function MyPageClient({
         />
       </section>
 
-      <section className="mt-6 rounded-lg border bg-card p-6">
+      <section className="mt-6 rounded-lg border bg-card p-6 shadow-sm">
         <div className="flex flex-wrap gap-2 border-b pb-4">
           <button
             type="button"
             className={[
-              "inline-flex h-10 items-center gap-2 rounded-md border px-4 text-sm font-medium transition",
+              "inline-flex h-10 items-center gap-2 rounded-md border px-4 text-sm font-bold transition",
               activeTab === "reviews"
                 ? "border-primary bg-primary text-primary-foreground"
                 : "bg-background hover:border-primary/60",
@@ -402,7 +402,7 @@ export function MyPageClient({
           <button
             type="button"
             className={[
-              "inline-flex h-10 items-center gap-2 rounded-md border px-4 text-sm font-medium transition",
+              "inline-flex h-10 items-center gap-2 rounded-md border px-4 text-sm font-bold transition",
               activeTab === "practice"
                 ? "border-primary bg-primary text-primary-foreground"
                 : "bg-background hover:border-primary/60",
@@ -430,7 +430,7 @@ export function MyPageClient({
 
 function SummaryCard({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg border bg-card p-4">
+    <div className="rounded-lg border bg-card p-4 shadow-sm">
       <p className="text-xs text-muted-foreground">{label}</p>
       <p className="mt-2 text-xl font-semibold">{value}</p>
     </div>

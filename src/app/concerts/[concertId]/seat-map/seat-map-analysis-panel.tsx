@@ -476,13 +476,13 @@ export function SeatMapAnalysisPanel({ seatMap }: SeatMapAnalysisPanelProps) {
   }
 
   return (
-    <section className="rounded-lg border bg-card p-6">
+    <section className="rounded-lg border bg-card p-6 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-sm text-muted-foreground">
             현재 상태: {getStatusText(seatMap.analysisStatus)}
           </p>
-          <h2 className="mt-1 text-xl font-semibold">AI 좌석 구역 분석</h2>
+          <h2 className="mt-1 text-xl font-black">AI 좌석 구역 분석</h2>
         </div>
         <Button
           type="button"
@@ -511,7 +511,7 @@ export function SeatMapAnalysisPanel({ seatMap }: SeatMapAnalysisPanelProps) {
         </p>
       ) : null}
 
-      <div className="mt-5 overflow-hidden rounded-md border bg-secondary">
+      <div className="mt-5 overflow-hidden rounded-lg border bg-secondary">
         <div className="relative">
           {/* Keep the rendered bitmap and polygon overlay in the same coordinate space. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -677,7 +677,7 @@ export function SeatMapAnalysisPanel({ seatMap }: SeatMapAnalysisPanelProps) {
                   onClick={() => selectZone(zone)}
                   disabled={isLockedDuringPolygonEdit}
                   className={[
-                    "flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 text-left transition",
+                    "flex flex-wrap items-center justify-between gap-2 rounded-md border bg-background px-3 py-2 text-left transition",
                     isSelected ? "border-primary bg-primary/5" : "",
                     isLockedDuringPolygonEdit
                       ? "cursor-not-allowed opacity-45"
@@ -707,7 +707,7 @@ export function SeatMapAnalysisPanel({ seatMap }: SeatMapAnalysisPanelProps) {
 
           <div className="grid gap-4">
             <form
-              className="rounded-md border bg-secondary p-4"
+              className="rounded-lg border bg-secondary/80 p-4"
               onSubmit={handleSave}
             >
               <div className="flex items-start justify-between gap-3">

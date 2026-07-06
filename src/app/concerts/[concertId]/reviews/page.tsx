@@ -116,7 +116,7 @@ export default async function ReviewsPage({ params }: ReviewsPageProps) {
   }
 
   return (
-    <main className="mx-auto w-full max-w-6xl px-6 py-8">
+    <main className="mx-auto w-full max-w-7xl px-5 py-8 sm:px-8">
       <Button asChild variant="ghost" size="sm">
         <Link href={`/concerts/${concert.id}`}>
           <ArrowLeft className="h-4 w-4" aria-hidden="true" />

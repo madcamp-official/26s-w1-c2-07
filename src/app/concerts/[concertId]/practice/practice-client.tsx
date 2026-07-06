@@ -2276,12 +2276,12 @@ export function PracticeClient({
         </div>
       ) : null}
 
-      <section className="rounded-lg border bg-card p-6">
+      <section className="rounded-lg border bg-card p-6 shadow-sm">
         <div>
           <p className="text-sm text-muted-foreground">
             {concert.artist} · {concert.region} · {concert.venueName}
           </p>
-          <h1 className="mt-1 text-2xl font-semibold">티켓팅 연습</h1>
+          <h1 className="mt-1 text-2xl font-black">티켓팅 연습</h1>
           <p className="mt-3 text-sm leading-6 text-muted-foreground">
             실제 예매가 아닌 연습용 흐름입니다. 좌석은 AI 분석 구역을 바탕으로
             생성한 VirtualSeat입니다.
@@ -2298,7 +2298,7 @@ export function PracticeClient({
                     key={type}
                     type="button"
                     className={[
-                      "rounded-md border p-4 text-left transition",
+                      "rounded-lg border bg-background p-4 text-left shadow-sm transition",
                       templateType === type
                         ? "border-primary bg-primary/5"
                         : "bg-background hover:border-primary/60",
@@ -2341,7 +2341,7 @@ export function PracticeClient({
                     key={item}
                     type="button"
                     className={[
-                      "rounded-md border px-4 py-3 text-left transition",
+                      "rounded-lg border bg-background px-4 py-3 text-left shadow-sm transition",
                       difficulty === item
                         ? "border-primary bg-primary/5"
                         : "bg-background hover:border-primary/60",
@@ -2367,8 +2367,8 @@ export function PracticeClient({
         ) : null}
 
         {phase === "countdown" ? (
-          <div className="mt-6 flex min-h-[360px] flex-col items-center justify-center rounded-md border bg-secondary px-6 py-10 text-center">
-            <div className="flex h-14 w-14 items-center justify-center rounded-md border bg-background">
+          <div className="mt-6 flex min-h-[360px] flex-col items-center justify-center rounded-lg border bg-primary/5 px-6 py-10 text-center">
+            <div className="flex h-14 w-14 items-center justify-center rounded-full border bg-background text-primary">
               <TimerReset className="h-6 w-6" aria-hidden="true" />
             </div>
             <p className="mt-5 text-sm text-muted-foreground">
@@ -2376,7 +2376,7 @@ export function PracticeClient({
               {PRACTICE_DIFFICULTY_LABELS[difficulty]}
             </p>
             <h2 className="mt-2 text-2xl font-semibold">연습 시작 준비</h2>
-            <div className="mt-8 flex h-28 w-28 items-center justify-center rounded-full border bg-background text-5xl font-semibold">
+            <div className="mt-8 flex h-28 w-28 items-center justify-center rounded-full border bg-background text-5xl font-black text-primary shadow-sm">
               {startCountdown ?? 0}
             </div>
             <div className="mt-8 flex flex-wrap justify-center gap-2">
@@ -2416,7 +2416,7 @@ export function PracticeClient({
 
         {phase === "running" ? (
           <div className="mt-6 space-y-5">
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-secondary px-4 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-primary/5 px-4 py-3">
               <div className="text-sm">
                 <span className="font-medium">
                   {currentStep ? PRACTICE_STEP_LABELS[currentStep] : ""}
@@ -2452,7 +2452,7 @@ export function PracticeClient({
             </div>
 
             {currentStep === "WAITING_QUEUE" ? (
-              <section className="rounded-md border p-5">
+              <section className="rounded-lg border bg-card p-5 shadow-sm">
                 <div className="flex items-center gap-3">
                   <Users className="h-5 w-5 text-muted-foreground" />
                   <div>
@@ -2485,7 +2485,7 @@ export function PracticeClient({
             ) : null}
 
             {currentStep === "CAPTCHA" ? (
-              <section className="rounded-md border p-5">
+              <section className="rounded-lg border bg-card p-5 shadow-sm">
                 <div className="flex items-center gap-3">
                   <ShieldCheck className="h-5 w-5 text-muted-foreground" />
                   <div>
@@ -2514,7 +2514,7 @@ export function PracticeClient({
             ) : null}
 
             {currentStep === "DATE_SELECT" ? (
-              <section className="rounded-md border p-5">
+              <section className="rounded-lg border bg-card p-5 shadow-sm">
                 <div className="flex items-center gap-3">
                   <CalendarDays className="h-5 w-5 text-muted-foreground" />
                   <div>
@@ -2552,7 +2552,7 @@ export function PracticeClient({
             ) : null}
 
             {currentStep === "SEAT_SELECT" ? (
-              <section className="rounded-md border p-5">
+              <section className="rounded-lg border bg-card p-5 shadow-sm">
                 <div className="flex items-center gap-3">
                   <Ticket className="h-5 w-5 text-muted-foreground" />
                   <div>

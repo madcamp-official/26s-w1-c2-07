@@ -513,8 +513,8 @@ export function ReviewClient({
 
   if (!selectedZone) {
     return (
-      <section className="mt-5 rounded-lg border bg-card p-6">
-        <h1 className="text-2xl font-semibold">좌석 구역 리뷰</h1>
+      <section className="mt-5 rounded-lg border bg-card p-6 shadow-sm">
+        <h1 className="text-2xl font-black">좌석 구역 리뷰</h1>
         <p className="mt-3 text-sm leading-6 text-muted-foreground">
           리뷰를 연결할 수 있는 좌석 구역 좌표가 없습니다. 좌석 배치도 분석
           결과를 확인해주세요.
@@ -525,19 +525,19 @@ export function ReviewClient({
 
   return (
     <div className="mt-5 grid gap-6 lg:grid-cols-[1fr_360px]">
-      <section className="rounded-lg border bg-card p-6">
+      <section className="rounded-lg border bg-card p-6 shadow-sm">
         <div>
           <p className="text-sm text-muted-foreground">
             {concert.artist} · {concert.region} · {concert.venueName}
           </p>
-          <h1 className="mt-1 text-2xl font-semibold">좌석 구역 리뷰</h1>
+          <h1 className="mt-1 text-2xl font-black">좌석 구역 리뷰</h1>
           <p className="mt-3 text-sm leading-6 text-muted-foreground">
             좌석 배치도에서 구역을 선택하면 해당 구역의 시야, 음향, 거리감
             후기를 확인하고 작성할 수 있습니다.
           </p>
         </div>
 
-        <div className="mt-5 overflow-hidden rounded-md border bg-secondary">
+        <div className="mt-5 overflow-hidden rounded-lg border bg-secondary">
           <div className="relative">
             {/* Keep the rendered bitmap and zone overlay in the same coordinate space. */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -655,7 +655,7 @@ export function ReviewClient({
                 type="button"
                 onClick={() => selectZone(zone.id)}
                 className={[
-                  "flex min-h-16 flex-col justify-center rounded-md border px-3 py-2 text-left transition",
+                  "flex min-h-16 flex-col justify-center rounded-md border bg-background px-3 py-2 text-left transition",
                   isSelected
                     ? "border-primary bg-primary/5"
                     : "bg-background hover:border-primary/60",
@@ -674,9 +674,9 @@ export function ReviewClient({
       </section>
 
       <aside className="space-y-4">
-        <section className="rounded-lg border bg-card p-5">
+        <section className="rounded-lg border bg-card p-5 shadow-sm">
           <p className="text-sm text-muted-foreground">선택 구역</p>
-          <h2 className="mt-1 text-xl font-semibold">
+          <h2 className="mt-1 text-xl font-black">
             {selectedZone.name} · {selectedZone.grade}
           </h2>
           <p className="mt-2 text-sm text-muted-foreground">
@@ -709,7 +709,7 @@ export function ReviewClient({
           </div>
         </section>
 
-        <section className="rounded-lg border bg-card p-5">
+        <section className="rounded-lg border bg-card p-5 shadow-sm">
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-lg font-semibold">
               {isEditing ? "리뷰 수정" : "리뷰 작성"}
@@ -823,10 +823,10 @@ export function ReviewClient({
         ) : null}
       </aside>
 
-      <section className="rounded-lg border bg-card p-6 lg:col-span-2">
+      <section className="rounded-lg border bg-card p-6 shadow-sm lg:col-span-2">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold">구역 리뷰</h2>
+            <h2 className="text-lg font-black">구역 리뷰</h2>
             <p className="mt-1 text-sm text-muted-foreground">
               {selectedZone.name} 구역에 연결된 리뷰입니다.
             </p>
