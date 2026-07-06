@@ -112,8 +112,10 @@ export function LoginForm({ redirectPath }: LoginFormProps) {
       <div className="grid grid-cols-2 rounded-md border bg-secondary p-1">
         <button
           type="button"
-          className={`rounded-sm px-3 py-2 text-sm font-medium ${
-            mode === "login" ? "bg-background shadow-sm" : "text-muted-foreground"
+          className={`rounded-sm px-3 py-2.5 text-sm font-bold transition ${
+            mode === "login"
+              ? "bg-background text-primary shadow-sm"
+              : "text-muted-foreground hover:text-foreground"
           }`}
           onClick={() => setMode("login")}
         >
@@ -121,10 +123,10 @@ export function LoginForm({ redirectPath }: LoginFormProps) {
         </button>
         <button
           type="button"
-          className={`rounded-sm px-3 py-2 text-sm font-medium ${
+          className={`rounded-sm px-3 py-2.5 text-sm font-bold transition ${
             mode === "signup"
-              ? "bg-background shadow-sm"
-              : "text-muted-foreground"
+              ? "bg-background text-primary shadow-sm"
+              : "text-muted-foreground hover:text-foreground"
           }`}
           onClick={() => setMode("signup")}
         >
@@ -136,7 +138,7 @@ export function LoginForm({ redirectPath }: LoginFormProps) {
         <label className="block space-y-2 text-sm font-medium">
           닉네임
           <input
-            className="h-10 w-full rounded-md border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
+            className="h-12 w-full rounded-md border bg-background px-4 text-sm outline-none transition focus:ring-2 focus:ring-ring"
             value={nickname}
             onChange={(event) => setNickname(event.target.value)}
             placeholder="좌석 리뷰에 표시될 이름"
@@ -148,7 +150,7 @@ export function LoginForm({ redirectPath }: LoginFormProps) {
       <label className="block space-y-2 text-sm font-medium">
         이메일
         <input
-          className="h-10 w-full rounded-md border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
+          className="h-12 w-full rounded-md border bg-background px-4 text-sm outline-none transition focus:ring-2 focus:ring-ring"
           type="email"
           value={email}
           onChange={(event) => setEmail(event.target.value)}
@@ -160,7 +162,7 @@ export function LoginForm({ redirectPath }: LoginFormProps) {
       <label className="block space-y-2 text-sm font-medium">
         비밀번호
         <input
-          className="h-10 w-full rounded-md border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
+          className="h-12 w-full rounded-md border bg-background px-4 text-sm outline-none transition focus:ring-2 focus:ring-ring"
           type="password"
           value={password}
           onChange={(event) => setPassword(event.target.value)}
@@ -171,12 +173,12 @@ export function LoginForm({ redirectPath }: LoginFormProps) {
       </label>
 
       {message ? (
-        <p className="rounded-md border bg-secondary px-3 py-2 text-sm text-muted-foreground">
+        <p className="rounded-md border bg-secondary px-4 py-3 text-sm text-muted-foreground">
           {message}
         </p>
       ) : null}
 
-      <Button type="submit" className="w-full" disabled={isPending}>
+      <Button type="submit" className="h-12 w-full" disabled={isPending}>
         {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
         {mode === "login" ? "로그인" : "회원가입"}
       </Button>

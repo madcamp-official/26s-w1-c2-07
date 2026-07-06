@@ -1,6 +1,17 @@
 import Image from "next/image";
 import Link from "next/link";
-import { CalendarDays, MapPin, MessageSquare, Search, Ticket } from "lucide-react";
+import {
+  CalendarDays,
+  Grid3X3,
+  Heart,
+  List,
+  MapPin,
+  MessageSquare,
+  RotateCcw,
+  Search,
+  Ticket,
+  UploadCloud,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -90,13 +101,13 @@ function ConcertPoster({
   title: string;
 }) {
   return (
-    <div className="relative aspect-[2/3] w-full overflow-hidden rounded-md border bg-secondary">
+    <div className="relative aspect-[16/10] w-full overflow-hidden bg-secondary">
       {src ? (
         <Image
           src={src}
           alt={`${title} 포스터`}
           fill
-          sizes="(min-width: 1024px) 150px, (min-width: 640px) 150px, calc(100vw - 4rem)"
+          sizes="(min-width: 1280px) 310px, (min-width: 768px) 50vw, 100vw"
           className="object-cover"
         />
       ) : (
@@ -144,53 +155,26 @@ export default async function ConcertListPage({
     filters.genre && !filterOptions.genres.includes(filters.genre)
       ? [filters.genre, ...filterOptions.genres]
       : filterOptions.genres;
-  const activeScopeLabel =
-    scopeTabs.find((tab) => tab.value === scope)?.label ?? "다가오는 공연";
 
   return (
-    <main className="mx-auto w-full max-w-6xl px-6 py-8">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="text-sm text-muted-foreground">공연 선택</p>
-          <h1 className="mt-1 text-2xl font-semibold">{activeScopeLabel}</h1>
-        </div>
-        <p className="text-sm text-muted-foreground">
-          {countLabel} {concerts.length}개
+    <main className="mx-auto w-full max-w-7xl px-5 py-8 sm:px-8">
+      <div>
+        <h1 className="text-3xl font-black tracking-normal">공연 찾기</h1>
+        <p className="mt-3 text-sm text-muted-foreground">
+          보고 싶은 공연을 검색하고, 좌석 배치도와 티켓팅 연습을 함께
+          확인해보세요.
         </p>
       </div>
 
-      <nav className="mt-5 flex flex-wrap gap-2" aria-label="공연 목록 필터">
-        {scopeTabs.map((tab) => (
-          <Button
-            key={tab.value}
-            asChild
-            variant={scope === tab.value ? "default" : "outline"}
-            size="sm"
-          >
-            <Link href={getConcertScopeHref(tab.value, filters)}>
-              {tab.label}
-            </Link>
-          </Button>
-        ))}
-      </nav>
-
-      <section className="mt-5 rounded-lg border bg-card p-4">
-        <form
-          action="/concerts"
-          className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px_180px_auto_auto] lg:items-end"
-        >
+      <section className="mt-7 rounded-lg border bg-card p-4 shadow-sm">
+        <form action="/concerts" className="space-y-5">
           <input type="hidden" name="scope" value={scope} />
 
-          <div className="min-w-0">
-            <label
-              htmlFor="concert-search"
-              className="text-xs font-medium text-muted-foreground"
-            >
-              검색어
-            </label>
-            <div className="relative mt-1">
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_112px]">
+            <label className="relative block">
+              <span className="sr-only">공연 검색어</span>
               <Search
-                className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+                className="pointer-events-none absolute left-5 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground"
                 aria-hidden="true"
               />
               <input
@@ -198,131 +182,183 @@ export default async function ConcertListPage({
                 name="q"
                 type="search"
                 defaultValue={filters.q ?? ""}
-                placeholder="공연명, 아티스트, 공연장"
-                className="h-10 w-full rounded-md border bg-background pl-9 pr-3 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                placeholder="공연명, 아티스트, 공연장을 검색하세요"
+                className="h-14 w-full rounded-md border bg-background pl-14 pr-4 text-base font-medium outline-none transition focus-visible:ring-2 focus-visible:ring-ring"
               />
-            </div>
-          </div>
-
-          <div>
-            <label
-              htmlFor="concert-region"
-              className="text-xs font-medium text-muted-foreground"
-            >
-              지역
             </label>
-            <select
-              id="concert-region"
-              name="region"
-              defaultValue={filters.region ?? ""}
-              className="mt-1 h-10 w-full rounded-md border bg-background px-3 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-            >
-              <option value="">전체 지역</option>
-              {regionOptions.map((region) => (
-                <option key={region} value={region}>
-                  {region}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label
-              htmlFor="concert-genre"
-              className="text-xs font-medium text-muted-foreground"
-            >
-              장르
-            </label>
-            <select
-              id="concert-genre"
-              name="genre"
-              defaultValue={filters.genre ?? ""}
-              className="mt-1 h-10 w-full rounded-md border bg-background px-3 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-            >
-              <option value="">전체 장르</option>
-              {genreOptions.map((genre) => (
-                <option key={genre} value={genre}>
-                  {genre}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <Button type="submit">
-            <Search className="h-4 w-4" aria-hidden="true" />
-            검색
-          </Button>
-
-          {hasActiveFilters ? (
-            <Button asChild variant="outline">
-              <Link href={resetHref}>초기화</Link>
+            <Button type="submit" className="h-14">
+              검색
             </Button>
-          ) : null}
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-4 lg:grid-cols-[1fr_1fr_1fr_auto] lg:items-end">
+            <label className="grid gap-2 text-sm font-semibold">
+              기간 선택
+              <span className="flex h-10 items-center rounded-md border bg-background px-3 text-sm text-muted-foreground">
+                공연 일정 기준
+              </span>
+            </label>
+            <label className="grid gap-2 text-sm font-semibold">
+              지역
+              <select
+                id="concert-region"
+                name="region"
+                defaultValue={filters.region ?? ""}
+                className="h-10 rounded-md border bg-background px-3 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <option value="">전체</option>
+                {regionOptions.map((region) => (
+                  <option key={region} value={region}>
+                    {region}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="grid gap-2 text-sm font-semibold">
+              공연 분류
+              <select
+                id="concert-genre"
+                name="genre"
+                defaultValue={filters.genre ?? ""}
+                className="h-10 rounded-md border bg-background px-3 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <option value="">전체</option>
+                {genreOptions.map((genre) => (
+                  <option key={genre} value={genre}>
+                    {genre}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {hasActiveFilters ? (
+              <Button asChild variant="ghost">
+                <Link href={resetHref}>
+                  초기화
+                  <RotateCcw className="h-4 w-4" aria-hidden="true" />
+                </Link>
+              </Button>
+            ) : (
+              <div className="hidden lg:block" />
+            )}
+          </div>
         </form>
       </section>
 
+      <nav className="mt-6 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap gap-2" aria-label="공연 목록 필터">
+          {scopeTabs.map((tab) => (
+            <Button
+              key={tab.value}
+              asChild
+              variant={scope === tab.value ? "default" : "outline"}
+              size="sm"
+            >
+              <Link href={getConcertScopeHref(tab.value, filters)}>
+                {tab.label}
+              </Link>
+            </Button>
+          ))}
+        </div>
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Button type="button" variant="outline" size="icon" aria-label="카드 보기">
+            <Grid3X3 className="h-4 w-4" aria-hidden="true" />
+          </Button>
+          <Button type="button" variant="ghost" size="icon" aria-label="목록 보기">
+            <List className="h-4 w-4" aria-hidden="true" />
+          </Button>
+        </div>
+      </nav>
+
+      <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-lg font-black">
+          {filters.q ? (
+            <>
+              <span className="text-primary">&apos;{filters.q}&apos;</span>{" "}
+              검색 결과
+            </>
+          ) : (
+            countLabel
+          )}{" "}
+          {concerts.length}건
+        </h2>
+        <span className="rounded-md border bg-card px-3 py-2 text-sm font-medium text-muted-foreground">
+          최신 등록순
+        </span>
+      </div>
+
       {concerts.length > 0 ? (
-        <section className="mt-6 grid gap-4 lg:grid-cols-2">
+        <section className="mt-5 grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
           {concerts.map((concert) => (
             <article
               key={concert.id}
-              className="overflow-hidden rounded-lg border bg-card"
+              className="overflow-hidden rounded-lg border bg-card shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
             >
-              <div className="grid sm:grid-cols-[150px_1fr]">
-                <div className="bg-secondary p-4">
+              <div className="relative">
+                <Link href={`/concerts/${concert.id}`}>
                   <ConcertPoster
                     src={concert.posterImageUrl}
                     title={concert.title}
                   />
+                </Link>
+                <span className="absolute left-3 top-3 rounded-md bg-primary px-2.5 py-1 text-xs font-bold text-primary-foreground">
+                  {concert.hasSeatMap ? "배치도 등록" : "예정"}
+                </span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  aria-label="관심 공연"
+                  className="absolute right-3 top-3 rounded-full bg-background/80 text-foreground shadow-sm backdrop-blur"
+                >
+                  <Heart className="h-4 w-4" aria-hidden="true" />
+                </Button>
+              </div>
+
+              <div className="space-y-4 p-4">
+                <div>
+                  <p className="text-sm font-bold text-primary">
+                    {concert.artist}
+                  </p>
+                  <h3 className="mt-1 line-clamp-2 min-h-12 text-base font-black leading-6">
+                    {concert.title}
+                  </h3>
                 </div>
 
-                <div className="flex min-w-0 flex-col justify-between gap-5 p-5">
-                  <div className="min-w-0">
-                    <p className="text-sm text-muted-foreground">
-                      {concert.artist}
-                    </p>
-                    <h2 className="mt-1 break-words text-xl font-semibold">
-                      {concert.title}
-                    </h2>
-                  </div>
+                <div className="space-y-1.5 text-xs text-muted-foreground">
+                  <p className="flex items-center gap-1.5">
+                    <CalendarDays className="h-3.5 w-3.5" aria-hidden="true" />
+                    {formatDateRange(concert.startDate, concert.endDate)}
+                  </p>
+                  <p className="flex items-center gap-1.5">
+                    <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
+                    {concert.region} · {concert.venueName}
+                  </p>
+                  <p className="flex items-center gap-1.5">
+                    <Ticket className="h-3.5 w-3.5" aria-hidden="true" />
+                    {formatPriceRange(concert.priceMin, concert.priceMax)}
+                  </p>
+                </div>
 
-                  <div className="grid gap-2 text-sm text-muted-foreground">
-                    <p className="flex items-center gap-2">
-                      <CalendarDays className="h-4 w-4" aria-hidden="true" />
-                      {formatDateRange(concert.startDate, concert.endDate)}
-                    </p>
-                    <p className="flex items-center gap-2">
-                      <MapPin className="h-4 w-4" aria-hidden="true" />
-                      {concert.region} · {concert.venueName}
-                    </p>
-                    <p className="flex items-center gap-2">
-                      <Ticket className="h-4 w-4" aria-hidden="true" />
-                      {formatPriceRange(concert.priceMin, concert.priceMax)}
-                    </p>
-                  </div>
-
-                  <div className="flex flex-wrap gap-2">
-                    {concert.genre ? (
-                      <span className="rounded-md border bg-secondary px-2.5 py-1 text-xs text-secondary-foreground">
-                        {concert.genre}
-                      </span>
-                    ) : null}
-                    <span className="rounded-md border bg-secondary px-2.5 py-1 text-xs text-secondary-foreground">
-                      좌석 배치도 {concert.hasSeatMap ? "등록됨" : "미등록"}
-                    </span>
-                    {concert.isSample ? (
-                      <span className="rounded-md border bg-secondary px-2.5 py-1 text-xs text-secondary-foreground">
-                        샘플 공연
-                      </span>
-                    ) : null}
-                    <span className="inline-flex items-center gap-1 rounded-md border bg-secondary px-2.5 py-1 text-xs text-secondary-foreground">
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <Button asChild variant="outline" size="sm">
+                    <Link href={`/concerts/${concert.id}`}>상세보기</Link>
+                  </Button>
+                  <Button asChild variant="outline" size="sm">
+                    <Link href={`/concerts/${concert.id}/seat-map`}>
+                      <UploadCloud className="h-3.5 w-3.5" aria-hidden="true" />
+                      배치도
+                    </Link>
+                  </Button>
+                  <Button asChild variant="outline" size="sm">
+                    <Link href={`/concerts/${concert.id}/reviews`}>
                       <MessageSquare className="h-3.5 w-3.5" aria-hidden="true" />
-                      리뷰 {concert.reviewCount}
-                    </span>
-                  </div>
-
-                  <Button asChild className="w-full">
-                    <Link href={`/concerts/${concert.id}`}>상세 보기</Link>
+                      리뷰
+                    </Link>
+                  </Button>
+                  <Button asChild size="sm">
+                    <Link href={`/concerts/${concert.id}/practice`}>
+                      티켓팅
+                    </Link>
                   </Button>
                 </div>
               </div>
@@ -330,8 +366,8 @@ export default async function ConcertListPage({
           ))}
         </section>
       ) : (
-        <section className="mt-6 rounded-lg border bg-card p-8 text-center">
-          <h2 className="text-lg font-semibold">{emptyTitle}</h2>
+        <section className="mt-6 rounded-lg border bg-card p-10 text-center shadow-sm">
+          <h2 className="text-lg font-black">{emptyTitle}</h2>
           <p className="mt-2 text-sm text-muted-foreground">
             {emptyDescription}
           </p>

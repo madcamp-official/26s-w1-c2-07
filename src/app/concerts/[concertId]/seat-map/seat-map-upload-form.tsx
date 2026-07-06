@@ -159,47 +159,71 @@ export function SeatMapUploadForm({ concertId }: SeatMapUploadFormProps) {
 
   return (
     <form className="space-y-5" onSubmit={handleSubmit}>
-      <label className="block space-y-2 text-sm font-medium">
-        좌석 배치도 이미지
-        <input
-          ref={inputRef}
-          className="block w-full rounded-md border bg-background px-3 py-2 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-secondary file:px-3 file:py-1.5 file:text-sm file:font-medium"
-          type="file"
-          accept="image/png,image/jpeg"
-          onChange={handleFileChange}
-        />
-      </label>
-
-      <p className="text-sm leading-6 text-muted-foreground">
-        PNG, JPG, JPEG 형식의 {formatFileSize(SEAT_MAP_MAX_FILE_SIZE)} 이하
-        이미지를 업로드할 수 있습니다.
-      </p>
-
-      {previewUrl ? (
-        <div className="overflow-hidden rounded-md border bg-secondary">
-          <div
-            className="min-h-80 bg-contain bg-center bg-no-repeat"
-            style={{
-              backgroundImage: `url(${previewUrl})`,
-            }}
-          />
-          <div className="flex flex-wrap items-center justify-between gap-2 border-t bg-card px-4 py-3 text-sm text-muted-foreground">
-            <span>{file?.name}</span>
-            {imageSize ? (
-              <span>
-                {imageSize.width} x {imageSize.height}
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.72fr)]">
+        <div className="space-y-4">
+          <label className="block text-sm font-black">
+            배치도 이미지 업로드
+            <span className="mt-3 flex min-h-56 cursor-pointer flex-col items-center justify-center rounded-md border border-dashed border-primary/50 bg-primary/5 px-6 py-8 text-center transition hover:bg-primary/10">
+              <ImageUp className="h-9 w-9 text-primary" aria-hidden="true" />
+              <span className="mt-4 block font-semibold text-foreground">
+                이미지를 선택하거나 업로드하세요.
               </span>
-            ) : null}
+              <span className="mt-2 block text-sm font-normal leading-6 text-muted-foreground">
+                PNG, JPG, JPEG 형식의 {formatFileSize(SEAT_MAP_MAX_FILE_SIZE)}{" "}
+                이하 이미지를 업로드할 수 있습니다.
+              </span>
+              <input
+                ref={inputRef}
+                className="sr-only"
+                type="file"
+                accept="image/png,image/jpeg"
+                onChange={handleFileChange}
+              />
+              <span className="mt-5 rounded-md border border-primary/35 bg-background px-4 py-2 text-sm font-bold text-primary">
+                파일 선택
+              </span>
+            </span>
+          </label>
+
+          <div className="rounded-md border bg-secondary/70 p-4 text-sm leading-6 text-muted-foreground">
+            <p className="font-bold text-foreground">이미지 업로드 TIP</p>
+            <ul className="mt-2 list-disc space-y-1 pl-5">
+              <li>좌석 구역명이 선명하게 보이는 이미지를 업로드해주세요.</li>
+              <li>공식 사이트의 좌석 배치도 또는 공연장 안내도를 권장합니다.</li>
+              <li>업로드 후 AI 분석으로 구역 후보를 자동 추출합니다.</li>
+            </ul>
           </div>
         </div>
-      ) : (
-        <div className="flex min-h-80 items-center justify-center rounded-md border bg-secondary text-sm text-muted-foreground">
-          <div className="text-center">
-            <ImageUp className="mx-auto h-8 w-8" aria-hidden="true" />
-            <p className="mt-3">업로드 전 이미지 미리보기가 표시됩니다.</p>
-          </div>
+
+        <div>
+          <p className="text-sm font-black">미리보기</p>
+          {previewUrl ? (
+            <div className="mt-3 overflow-hidden rounded-md border bg-secondary">
+              <div
+                className="min-h-80 bg-contain bg-center bg-no-repeat"
+                style={{
+                  backgroundImage: `url(${previewUrl})`,
+                }}
+              />
+              <div className="flex flex-wrap items-center justify-between gap-2 border-t bg-card px-4 py-3 text-sm text-muted-foreground">
+                <span className="truncate">{file?.name}</span>
+                {imageSize ? (
+                  <span>
+                    {imageSize.width} x {imageSize.height}
+                  </span>
+                ) : null}
+              </div>
+            </div>
+          ) : (
+            <div className="mt-3 flex min-h-80 items-center justify-center rounded-md border bg-secondary text-sm text-muted-foreground">
+              <div className="text-center">
+                <ImageUp className="mx-auto h-9 w-9" aria-hidden="true" />
+                <p className="mt-3">이미지를 업로드하면 미리보기가 표시됩니다.</p>
+              </div>
+            </div>
+          )}
         </div>
-      )}
+      </div>
 
       {message ? (
         <p className="rounded-md border bg-secondary px-3 py-2 text-sm text-muted-foreground">
@@ -207,10 +231,15 @@ export function SeatMapUploadForm({ concertId }: SeatMapUploadFormProps) {
         </p>
       ) : null}
 
-      <Button type="submit" disabled={!file || isPending} className="w-full">
-        {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-        좌석 배치도 업로드
-      </Button>
+      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_220px] sm:items-center">
+        <p className="rounded-md border bg-primary/5 px-4 py-3 text-sm text-muted-foreground">
+          이미지 업로드 후 AI 분석을 시작하면 좌석 구역이 자동으로 인식됩니다.
+        </p>
+        <Button type="submit" disabled={!file || isPending} className="h-12">
+          {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+          좌석 배치도 업로드
+        </Button>
+      </div>
     </form>
   );
 }
