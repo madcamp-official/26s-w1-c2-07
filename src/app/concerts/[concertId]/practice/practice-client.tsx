@@ -46,6 +46,7 @@ import {
   isBboxCornerPolygon,
   parseBbox,
   parsePolygon,
+  polygonFromBbox,
   type BoundingBox,
   type Point,
 } from "@/lib/seat-zone-geometry";
@@ -106,6 +107,22 @@ type SeatZoneWithGeometry = Omit<SeatZoneSummary, "bbox" | "polygon"> & {
   bbox: BoundingBox | null;
   polygon: Point[] | null;
   labelPoint: Point | null;
+};
+
+type Yes24SeatGroup = {
+  id: string;
+  label: string;
+  zones: SeatZoneWithGeometry[];
+  bounds: BoundingBox;
+  center: Point;
+};
+
+type Yes24SeatGroupNode = {
+  zone: SeatZoneWithGeometry;
+  bounds: BoundingBox;
+  explicitFloorKey: string | null;
+  floorKey: string;
+  isLarge: boolean;
 };
 
 type SeatRowSummary = {
@@ -237,7 +254,21 @@ const DIRECT_SEAT_MAP_DEFAULT_ZOOM = 1;
 const DIRECT_SEAT_MAP_MIN_ZOOM = 1;
 const DIRECT_SEAT_MAP_MAX_ZOOM = 3;
 const DIRECT_SEAT_MAP_ZOOM_STEP = 0.12;
+const DIRECT_SEAT_MAP_IMAGE_OPACITY = 0.38;
+const DIRECT_SEAT_MAX_PIXEL_SIZE = 22;
 const GEOMETRY_EPSILON = 0.000001;
+const YES24_GROUP_ADJACENCY_TOLERANCE = 0.035;
+const YES24_GROUP_MAX_ZONE_COUNT = 3;
+const YES24_GROUP_PADDING_RATIO = 0.12;
+const YES24_GROUP_MIN_PADDING = 0.018;
+const YES24_INFERRED_FLOOR_VERTICAL_TOLERANCE = 0.12;
+const YES24_LARGE_ZONE_AREA_THRESHOLD = 0.055;
+const YES24_LARGE_ZONE_WIDTH_THRESHOLD = 0.34;
+const YES24_LARGE_ZONE_HEIGHT_THRESHOLD = 0.28;
+const YES24_RECT_SEAT_WIDTH_HEIGHT_RATIO = 0.78;
+const YES24_RECT_SEAT_MAX_PIXEL_WIDTH = 18;
+const YES24_RECT_SEAT_MIN_WIDTH_PERCENT = 1.2;
+const YES24_RECT_SEAT_MAX_WIDTH_PERCENT = 4.2;
 
 function clampNumber(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
@@ -298,6 +329,423 @@ function getPointBounds(points: Point[]) {
     width: maxX - minX,
     height: maxY - minY,
   } satisfies BoundingBox;
+}
+
+function getZoneDisplayPolygon(zone: SeatZoneWithGeometry) {
+  if (zone.polygon) {
+    return zone.polygon;
+  }
+
+  if (zone.bbox) {
+    return polygonFromBbox(zone.bbox);
+  }
+
+  return null;
+}
+
+function getZoneGeometryBounds(zone: SeatZoneWithGeometry) {
+  if (zone.polygon) {
+    return getPointBounds(zone.polygon);
+  }
+
+  return zone.bbox;
+}
+
+function getUnionBounds(boundsList: BoundingBox[]) {
+  const minX = Math.min(...boundsList.map((bounds) => bounds.x));
+  const maxX = Math.max(...boundsList.map((bounds) => bounds.x + bounds.width));
+  const minY = Math.min(...boundsList.map((bounds) => bounds.y));
+  const maxY = Math.max(
+    ...boundsList.map((bounds) => bounds.y + bounds.height),
+  );
+
+  return {
+    x: minX,
+    y: minY,
+    width: maxX - minX,
+    height: maxY - minY,
+  } satisfies BoundingBox;
+}
+
+function expandBounds(bounds: BoundingBox, ratio: number) {
+  const paddingX = Math.max(bounds.width * ratio, YES24_GROUP_MIN_PADDING);
+  const paddingY = Math.max(bounds.height * ratio, YES24_GROUP_MIN_PADDING);
+  const x = Math.max(0, bounds.x - paddingX);
+  const y = Math.max(0, bounds.y - paddingY);
+  const right = Math.min(1, bounds.x + bounds.width + paddingX);
+  const bottom = Math.min(1, bounds.y + bounds.height + paddingY);
+
+  return {
+    x,
+    y,
+    width: Math.max(right - x, GEOMETRY_EPSILON),
+    height: Math.max(bottom - y, GEOMETRY_EPSILON),
+  } satisfies BoundingBox;
+}
+
+function mapPointToBounds(point: Point, bounds: BoundingBox) {
+  return {
+    x: clampNumber((point.x - bounds.x) / bounds.width, 0, 1),
+    y: clampNumber((point.y - bounds.y) / bounds.height, 0, 1),
+  } satisfies Point;
+}
+
+function mapPolygonToBounds(points: Point[], bounds: BoundingBox) {
+  return points.map((point) => mapPointToBounds(point, bounds));
+}
+
+function getExplicitFloorKey(zone: SeatZoneWithGeometry) {
+  const compactText = `${zone.name} ${zone.grade}`.replace(/\s+/g, "");
+  const suffixMatch = compactText.match(/([0-9]+)(?:층|F|FLOOR)/i);
+  const prefixMatch = compactText.match(/(?:층|F|FLOOR)([0-9]+)/i);
+  const floorValue = suffixMatch?.[1] ?? prefixMatch?.[1];
+
+  return floorValue ? `floor-${Number(floorValue)}` : null;
+}
+
+function isLargeYes24Zone(bounds: BoundingBox) {
+  return (
+    bounds.width * bounds.height >= YES24_LARGE_ZONE_AREA_THRESHOLD ||
+    bounds.width >= YES24_LARGE_ZONE_WIDTH_THRESHOLD ||
+    bounds.height >= YES24_LARGE_ZONE_HEIGHT_THRESHOLD
+  );
+}
+
+function getInferredFloorKey(input: {
+  bounds: BoundingBox;
+  floorBands: {
+    key: string;
+    centerY: number;
+    nodeCount: number;
+  }[];
+}) {
+  const centerY = getBboxCenter(input.bounds).y;
+  const matchedFloorBand = input.floorBands.find(
+    (floorBand) =>
+      Math.abs(floorBand.centerY - centerY) <=
+      Math.max(YES24_INFERRED_FLOOR_VERTICAL_TOLERANCE, input.bounds.height),
+  );
+
+  if (!matchedFloorBand) {
+    const nextFloorBand = {
+      key: `inferred-floor-${input.floorBands.length + 1}`,
+      centerY,
+      nodeCount: 1,
+    };
+
+    input.floorBands.push(nextFloorBand);
+    return nextFloorBand.key;
+  }
+
+  matchedFloorBand.centerY =
+    (matchedFloorBand.centerY * matchedFloorBand.nodeCount + centerY) /
+    (matchedFloorBand.nodeCount + 1);
+  matchedFloorBand.nodeCount += 1;
+
+  return matchedFloorBand.key;
+}
+
+function createYes24SeatGroupNodes(zones: SeatZoneWithGeometry[]) {
+  const floorBands: {
+    key: string;
+    centerY: number;
+    nodeCount: number;
+  }[] = [];
+
+  return zones
+    .map((zone) => ({
+      zone,
+      bounds: getZoneGeometryBounds(zone),
+      explicitFloorKey: getExplicitFloorKey(zone),
+    }))
+    .filter(
+      (
+        node,
+      ): node is {
+        zone: SeatZoneWithGeometry;
+        bounds: BoundingBox;
+        explicitFloorKey: string | null;
+      } => Boolean(node.bounds),
+    )
+    .sort((firstNode, secondNode) => {
+      const firstCenter = getBboxCenter(firstNode.bounds);
+      const secondCenter = getBboxCenter(secondNode.bounds);
+
+      return (
+        firstCenter.y - secondCenter.y ||
+        firstCenter.x - secondCenter.x ||
+        firstNode.zone.name.localeCompare(secondNode.zone.name, "ko-KR")
+      );
+    })
+    .map((node) => ({
+      ...node,
+      floorKey:
+        node.explicitFloorKey ??
+        getInferredFloorKey({
+          bounds: node.bounds,
+          floorBands,
+        }),
+      isLarge: isLargeYes24Zone(node.bounds),
+    }));
+}
+
+function getDisplayRangeOverlap(
+  firstStart: number,
+  firstEnd: number,
+  secondStart: number,
+  secondEnd: number,
+) {
+  return Math.max(
+    0,
+    Math.min(firstEnd, secondEnd) - Math.max(firstStart, secondStart),
+  );
+}
+
+function getDisplayRangeGap(
+  firstStart: number,
+  firstEnd: number,
+  secondStart: number,
+  secondEnd: number,
+) {
+  if (firstEnd < secondStart) {
+    return secondStart - firstEnd;
+  }
+
+  if (secondEnd < firstStart) {
+    return firstStart - secondEnd;
+  }
+
+  return 0;
+}
+
+function getBoundsCenterDistance(
+  firstBounds: BoundingBox,
+  secondBounds: BoundingBox,
+) {
+  const firstCenter = getBboxCenter(firstBounds);
+  const secondCenter = getBboxCenter(secondBounds);
+
+  return Math.hypot(
+    firstCenter.x - secondCenter.x,
+    firstCenter.y - secondCenter.y,
+  );
+}
+
+function areZoneBoundsAdjacent(
+  firstBounds: BoundingBox,
+  secondBounds: BoundingBox,
+) {
+  const firstRight = firstBounds.x + firstBounds.width;
+  const secondRight = secondBounds.x + secondBounds.width;
+  const horizontalGap = getDisplayRangeGap(
+    firstBounds.x,
+    firstRight,
+    secondBounds.x,
+    secondRight,
+  );
+  const firstBottom = firstBounds.y + firstBounds.height;
+  const secondBottom = secondBounds.y + secondBounds.height;
+  const verticalOverlap = getDisplayRangeOverlap(
+    firstBounds.y,
+    firstBottom,
+    secondBounds.y,
+    secondBottom,
+  );
+  const minHeight = Math.min(firstBounds.height, secondBounds.height);
+  const hasMeaningfulVerticalOverlap =
+    minHeight <= GEOMETRY_EPSILON || verticalOverlap / minHeight >= 0.18;
+
+  return (
+    horizontalGap <= YES24_GROUP_ADJACENCY_TOLERANCE &&
+    hasMeaningfulVerticalOverlap
+  );
+}
+
+function getYes24GroupCandidateScore(
+  candidateNode: Yes24SeatGroupNode,
+  groupNodes: Yes24SeatGroupNode[],
+) {
+  return Math.min(
+    ...groupNodes.map((groupNode) =>
+      getBoundsCenterDistance(candidateNode.bounds, groupNode.bounds),
+    ),
+  );
+}
+
+function getNextYes24GroupCandidate(
+  nodes: Yes24SeatGroupNode[],
+  groupNodes: Yes24SeatGroupNode[],
+  visitedZoneIds: Set<string>,
+) {
+  return nodes
+    .filter((candidateNode) => !visitedZoneIds.has(candidateNode.zone.id))
+    .sort((firstNode, secondNode) => {
+      const firstIsAdjacent = groupNodes.some((groupNode) =>
+        areZoneBoundsAdjacent(groupNode.bounds, firstNode.bounds),
+      );
+      const secondIsAdjacent = groupNodes.some((groupNode) =>
+        areZoneBoundsAdjacent(groupNode.bounds, secondNode.bounds),
+      );
+      const scoreDiff =
+        getYes24GroupCandidateScore(firstNode, groupNodes) -
+        getYes24GroupCandidateScore(secondNode, groupNodes);
+
+      return (
+        Number(secondIsAdjacent) - Number(firstIsAdjacent) ||
+        scoreDiff ||
+        firstNode.bounds.x - secondNode.bounds.x ||
+        firstNode.bounds.y - secondNode.bounds.y ||
+        firstNode.zone.name.localeCompare(secondNode.zone.name, "ko-KR")
+      );
+    })[0];
+}
+
+function getYes24TargetGroupSize(remainingNodeCount: number) {
+  if (remainingNodeCount <= YES24_GROUP_MAX_ZONE_COUNT) {
+    return remainingNodeCount;
+  }
+
+  if (remainingNodeCount % YES24_GROUP_MAX_ZONE_COUNT === 1) {
+    return YES24_GROUP_MAX_ZONE_COUNT - 1;
+  }
+
+  return YES24_GROUP_MAX_ZONE_COUNT;
+}
+
+function createYes24SeatGroupFromNodes(groupNodes: Yes24SeatGroupNode[]) {
+  const sortedZones = groupNodes
+    .map((groupNode) => groupNode.zone)
+    .sort((firstZone, secondZone) => {
+      const firstBounds = getZoneGeometryBounds(firstZone);
+      const secondBounds = getZoneGeometryBounds(secondZone);
+
+      if (!firstBounds || !secondBounds) {
+        return firstZone.name.localeCompare(secondZone.name, "ko-KR");
+      }
+
+      return (
+        firstBounds.y - secondBounds.y ||
+        firstBounds.x - secondBounds.x ||
+        firstZone.name.localeCompare(secondZone.name, "ko-KR")
+      );
+    });
+  const groupBounds = getUnionBounds(
+    groupNodes.map((groupNode) => groupNode.bounds),
+  );
+  const firstZoneName = sortedZones[0]?.name ?? "구역";
+  const label =
+    sortedZones.length > 1
+      ? `${firstZoneName} 외 ${sortedZones.length - 1}구역`
+      : firstZoneName;
+
+  return {
+    id: sortedZones
+      .map((zone) => zone.id)
+      .sort()
+      .join(":"),
+    label,
+    zones: sortedZones,
+    bounds: groupBounds,
+    center: getBboxCenter(groupBounds),
+  } satisfies Yes24SeatGroup;
+}
+
+function createYes24SmallSeatGroupsForFloor(floorNodes: Yes24SeatGroupNode[]) {
+  const sortedFloorNodes = [...floorNodes].sort((firstNode, secondNode) => {
+    const firstCenter = getBboxCenter(firstNode.bounds);
+    const secondCenter = getBboxCenter(secondNode.bounds);
+
+    return (
+      firstCenter.y - secondCenter.y ||
+      firstCenter.x - secondCenter.x ||
+      firstNode.zone.name.localeCompare(secondNode.zone.name, "ko-KR")
+    );
+  });
+  const visitedZoneIds = new Set<string>();
+  const groups: Yes24SeatGroup[] = [];
+
+  for (const node of sortedFloorNodes) {
+    if (visitedZoneIds.has(node.zone.id)) {
+      continue;
+    }
+
+    const remainingNodeCount = sortedFloorNodes.filter(
+      (candidateNode) => !visitedZoneIds.has(candidateNode.zone.id),
+    ).length;
+    const targetGroupSize = getYes24TargetGroupSize(remainingNodeCount);
+    const groupNodes = [node];
+    visitedZoneIds.add(node.zone.id);
+
+    while (groupNodes.length < targetGroupSize) {
+      const nextCandidateNode = getNextYes24GroupCandidate(
+        sortedFloorNodes,
+        groupNodes,
+        visitedZoneIds,
+      );
+
+      if (!nextCandidateNode) {
+        break;
+      }
+
+      groupNodes.push(nextCandidateNode);
+      visitedZoneIds.add(nextCandidateNode.zone.id);
+    }
+
+    groups.push(createYes24SeatGroupFromNodes(groupNodes));
+  }
+
+  return groups;
+}
+
+function createYes24SeatGroups(zones: SeatZoneWithGeometry[]) {
+  const nodes = createYes24SeatGroupNodes(zones);
+  const floorNodeMap = new Map<string, Yes24SeatGroupNode[]>();
+  const groups: Yes24SeatGroup[] = [];
+
+  for (const node of nodes) {
+    const floorNodes = floorNodeMap.get(node.floorKey) ?? [];
+    floorNodes.push(node);
+    floorNodeMap.set(node.floorKey, floorNodes);
+  }
+
+  for (const floorNodes of floorNodeMap.values()) {
+    const largeNodes = floorNodes.filter((node) => node.isLarge);
+    const smallNodes = floorNodes.filter((node) => !node.isLarge);
+
+    groups.push(
+      ...largeNodes.map((node) => createYes24SeatGroupFromNodes([node])),
+      ...createYes24SmallSeatGroupsForFloor(smallNodes),
+    );
+  }
+
+  return groups.sort(
+    (firstGroup, secondGroup) =>
+      firstGroup.bounds.y - secondGroup.bounds.y ||
+      firstGroup.center.x - secondGroup.center.x ||
+      firstGroup.label.localeCompare(secondGroup.label, "ko-KR"),
+  );
+}
+
+function getDefaultYes24SeatGroupId(groups: Yes24SeatGroup[]) {
+  return (
+    [...groups].sort(
+      (firstGroup, secondGroup) =>
+        firstGroup.bounds.y - secondGroup.bounds.y ||
+        secondGroup.center.x - firstGroup.center.x ||
+        firstGroup.label.localeCompare(secondGroup.label, "ko-KR"),
+    )[0]?.id ?? null
+  );
+}
+
+function getYes24GroupSeatWidthPercent(
+  seat: PositionedSeatSummary,
+  cropBounds: BoundingBox,
+) {
+  return clampNumber(
+    seat.sizePercent / cropBounds.width,
+    YES24_RECT_SEAT_MIN_WIDTH_PERCENT,
+    YES24_RECT_SEAT_MAX_WIDTH_PERCENT,
+  );
 }
 
 function getPolygonHorizontalSegments(points: Point[], y: number) {
@@ -558,7 +1006,9 @@ function getDirectSeatSizePercent(input: {
   }
 
   const singleSeatGap =
-    Math.min(bounds.width, bounds.height * input.seatMapHeightRatio) * 100 * 0.5;
+    Math.min(bounds.width, bounds.height * input.seatMapHeightRatio) *
+    100 *
+    0.5;
 
   return clampDirectSeatSizePercent(singleSeatGap);
 }
@@ -590,8 +1040,7 @@ export function PracticeClient({
   const [phase, setPhase] = useState<PracticePhase>("setup");
   const [templateType, setTemplateType] =
     useState<TicketTemplateType>("nol_old");
-  const [difficulty, setDifficulty] =
-    useState<PracticeDifficulty>("normal");
+  const [difficulty, setDifficulty] = useState<PracticeDifficulty>("normal");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [startedAt, setStartedAt] = useState<number | null>(null);
@@ -601,12 +1050,13 @@ export function PracticeClient({
   const [initialQueueCount, setInitialQueueCount] = useState(0);
   const [queueCount, setQueueCount] = useState(0);
   const [selectedScheduleId, setSelectedScheduleId] = useState<string | null>(
-    schedules[0]?.id ?? null,
-  );
-  const [selectedZoneId, setSelectedZoneId] = useState<string | null>(
     null,
   );
+  const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
   const [selectedSeatId, setSelectedSeatId] = useState<string | null>(null);
+  const [selectedYes24SeatGroupId, setSelectedYes24SeatGroupId] = useState<
+    string | null
+  >(null);
   const [seatSelectView, setSeatSelectView] = useState<"zone" | "seat">("zone");
   const [selectableSeatIds, setSelectableSeatIds] = useState<string[]>([]);
   const [soldOutSeatIds, setSoldOutSeatIds] = useState<string[]>([]);
@@ -639,6 +1089,7 @@ export function PracticeClient({
   const currentStep = phase === "running" ? steps[currentStepIndex] : null;
   const isSplitSeatSelect = templateType === "nol_old";
   const isDirectSeatMapSelect = templateType === "nol_new";
+  const isYes24SeatSelect = templateType === "yes24";
   const seatMapHeightRatio =
     loadedSeatMapMetrics?.seatMapId === seatMap.id
       ? loadedSeatMapMetrics.heightRatio
@@ -670,6 +1121,29 @@ export function PracticeClient({
     () => zonesWithGeometry.filter((zone) => zone.polygon || zone.bbox),
     [zonesWithGeometry],
   );
+  const yes24SeatGroups = useMemo(
+    () => createYes24SeatGroups(zonesWithGeometry),
+    [zonesWithGeometry],
+  );
+  const defaultYes24SeatGroupId = useMemo(
+    () => getDefaultYes24SeatGroupId(yes24SeatGroups),
+    [yes24SeatGroups],
+  );
+  const activeYes24SeatGroup =
+    yes24SeatGroups.find((group) => group.id === selectedYes24SeatGroupId) ??
+    yes24SeatGroups.find((group) => group.id === defaultYes24SeatGroupId) ??
+    null;
+  const activeYes24SeatGroupZoneIds = useMemo(
+    () => new Set(activeYes24SeatGroup?.zones.map((zone) => zone.id) ?? []),
+    [activeYes24SeatGroup],
+  );
+  const activeYes24SeatGroupCropBounds = useMemo(
+    () =>
+      activeYes24SeatGroup
+        ? expandBounds(activeYes24SeatGroup.bounds, YES24_GROUP_PADDING_RATIO)
+        : null,
+    [activeYes24SeatGroup],
+  );
   const selectedSchedule =
     schedules.find((schedule) => schedule.id === selectedScheduleId) ?? null;
   const selectedZone =
@@ -687,7 +1161,8 @@ export function PracticeClient({
     [zones],
   );
   const remainingSelectableSeatIds = useMemo(
-    () => selectableSeatIds.filter((seatId) => !soldOutSeatIds.includes(seatId)),
+    () =>
+      selectableSeatIds.filter((seatId) => !soldOutSeatIds.includes(seatId)),
     [selectableSeatIds, soldOutSeatIds],
   );
   const remainingSelectableSeatIdSet = useMemo(
@@ -835,6 +1310,15 @@ export function PracticeClient({
       }),
     [seatMapHeightRatio, zonesWithGeometry],
   );
+  const activeYes24SeatGroupSeats = useMemo(
+    () =>
+      activeYes24SeatGroup
+        ? directSeatMapSeats.filter((seat) =>
+            activeYes24SeatGroupZoneIds.has(seat.zoneId),
+          )
+        : [],
+    [activeYes24SeatGroup, activeYes24SeatGroupZoneIds, directSeatMapSeats],
+  );
   const directSeatMapAvailableSeatIds = useMemo(
     () =>
       directSeatMapSeats
@@ -846,11 +1330,14 @@ export function PracticeClient({
     initialQueueCount > 0
       ? Math.min(
           100,
-          Math.max(0, ((initialQueueCount - queueCount) / initialQueueCount) * 100),
+          Math.max(
+            0,
+            ((initialQueueCount - queueCount) / initialQueueCount) * 100,
+          ),
         )
       : 0;
   const directSeatMapWidthPercent = seatMapZoom * 100;
-  const directSeatMaxSizePx = seatMapZoom * 18;
+  const directSeatMaxSizePx = seatMapZoom * DIRECT_SEAT_MAX_PIXEL_SIZE;
 
   const completePractice = useCallback(
     async (input: {
@@ -961,7 +1448,8 @@ export function PracticeClient({
 
   function initializeSeatSelectStep() {
     const availableSeatIds =
-      isDirectSeatMapSelect && directSeatMapAvailableSeatIds.length > 0
+      (isDirectSeatMapSelect || isYes24SeatSelect) &&
+      directSeatMapAvailableSeatIds.length > 0
         ? directSeatMapAvailableSeatIds
         : allAvailableSeatIds;
     const candidateCount = getSelectableSeatCount({
@@ -977,6 +1465,9 @@ export function PracticeClient({
     setSoldOutSeatIds([]);
     setSelectedSeatId(null);
     setSelectedZoneId(null);
+    setSelectedYes24SeatGroupId(
+      isYes24SeatSelect ? defaultYes24SeatGroupId : null,
+    );
     setSeatSelectView("zone");
   }
 
@@ -1193,8 +1684,10 @@ export function PracticeClient({
     }
 
     const zoomRatio = nextZoom / seatMapZoom;
-    const nextScrollLeft = (container.scrollLeft + pointerX) * zoomRatio - pointerX;
-    const nextScrollTop = (container.scrollTop + pointerY) * zoomRatio - pointerY;
+    const nextScrollLeft =
+      (container.scrollLeft + pointerX) * zoomRatio - pointerX;
+    const nextScrollTop =
+      (container.scrollTop + pointerY) * zoomRatio - pointerY;
 
     setSeatMapZoom(nextZoom);
     window.requestAnimationFrame(() => {
@@ -1241,10 +1734,15 @@ export function PracticeClient({
       setCurrentStepIndex(0);
       setStartedAt(Date.now());
       setElapsedMs(0);
-      setStartDelayMs(payload.data.practiceSession.startDelayMs ?? finalStartDelayMs);
+      setStartDelayMs(
+        payload.data.practiceSession.startDelayMs ?? finalStartDelayMs,
+      );
       setCaptchaText(generatePracticeCaptcha());
       setCaptchaInput("");
+      setSelectedScheduleId(null);
       setSelectedSeatId(null);
+      setSelectedZoneId(null);
+      setSelectedYes24SeatGroupId(null);
       setSelectableSeatIds([]);
       setSoldOutSeatIds([]);
       setResult(null);
@@ -1347,6 +1845,15 @@ export function PracticeClient({
     }
   }
 
+  function handleYes24GroupSelect(group: Yes24SeatGroup) {
+    setSelectedYes24SeatGroupId(group.id);
+    setSelectedSeatId(null);
+    setSelectedZoneId(null);
+    setMessage(
+      `${group.label} 그룹을 선택했습니다. 남아있는 좌석을 선택하세요.`,
+    );
+  }
+
   function handleRestart() {
     clearToastTimer();
     setPhase("setup");
@@ -1359,7 +1866,10 @@ export function PracticeClient({
     setCaptchaInput("");
     setInitialQueueCount(0);
     setQueueCount(0);
+    setSelectedScheduleId(null);
+    setSelectedZoneId(null);
     setSelectedSeatId(null);
+    setSelectedYes24SeatGroupId(null);
     setSeatSelectView("zone");
     setSelectableSeatIds([]);
     setSoldOutSeatIds([]);
@@ -1409,6 +1919,10 @@ export function PracticeClient({
                     ].join(" ")}
                     onClick={() => {
                       setTemplateType(type);
+                      setSelectedScheduleId(null);
+                      setSelectedZoneId(null);
+                      setSelectedSeatId(null);
+                      setSelectedYes24SeatGroupId(null);
                       resetStartGate();
                     }}
                   >
@@ -1659,9 +2173,11 @@ export function PracticeClient({
                     <p className="mt-1 text-sm text-muted-foreground">
                       {isDirectSeatMapSelect
                         ? "구역 선택 없이 배치도 위 원형 좌석을 바로 선택합니다."
-                        : isSplitSeatSelect && seatSelectView === "seat"
-                          ? "선택한 구역의 남아있는 좌석을 선택합니다."
-                          : "먼저 배치도에서 구역을 선택한 뒤 남아있는 좌석을 선택합니다."}
+                        : isYes24SeatSelect
+                          ? "미니맵에서 구역 그룹을 선택한 뒤 직사각형 좌석을 선택합니다."
+                          : isSplitSeatSelect && seatSelectView === "seat"
+                            ? "선택한 구역의 남아있는 좌석을 선택합니다."
+                            : "먼저 배치도에서 구역을 선택한 뒤 남아있는 좌석을 선택합니다."}
                     </p>
                   </div>
                 </div>
@@ -1699,9 +2215,12 @@ export function PracticeClient({
                           <img
                             src={seatMap.imageUrl}
                             alt="좌석 배치도"
-                            className="block w-full select-none"
+                            className="block w-full select-none contrast-75 saturate-75"
                             draggable={false}
                             onLoad={handleSeatMapImageLoad}
+                            style={{
+                              opacity: DIRECT_SEAT_MAP_IMAGE_OPACITY,
+                            }}
                           />
                           {directSeatMapSeats.map((seat) => {
                             const isSelected = selectedSeatId === seat.id;
@@ -1716,18 +2235,18 @@ export function PracticeClient({
                                 key={seat.id}
                                 type="button"
                                 className={[
-                                  "absolute aspect-square -translate-x-1/2 -translate-y-1/2 rounded-full border p-0 text-[0px] leading-none shadow-sm transition",
+                                  "absolute aspect-square -translate-x-1/2 -translate-y-1/2 rounded-full border-2 p-0 text-[0px] leading-none shadow-[0_0_0_2px_rgba(255,255,255,0.95),0_3px_10px_rgba(15,23,42,0.35)] transition",
                                   isSelected
-                                    ? "z-20 border-primary bg-primary"
+                                    ? "z-20 border-primary bg-primary ring-2 ring-white"
                                     : "",
                                   !isSelected && isCandidate
-                                    ? "z-10 border-emerald-700 bg-emerald-400 hover:border-primary hover:bg-primary"
+                                    ? "z-10 border-emerald-950 bg-emerald-400 ring-1 ring-white hover:border-primary hover:bg-primary"
                                     : "",
                                   !isSelected && !isCandidate
-                                    ? "border-muted-foreground/30 bg-muted-foreground/30 opacity-40"
+                                    ? "border-slate-500 bg-slate-300 opacity-80"
                                     : "",
                                   isSoldOut
-                                    ? "border-destructive/40 bg-destructive/40 opacity-30"
+                                    ? "border-destructive bg-destructive/70 opacity-85"
                                     : "",
                                 ].join(" ")}
                                 style={{
@@ -1752,6 +2271,218 @@ export function PracticeClient({
                         생성해주세요.
                       </p>
                     )}
+                  </div>
+                ) : isYes24SeatSelect ? (
+                  <div className="mt-5 grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_240px]">
+                    <div className="rounded-md border bg-secondary p-3">
+                      <div className="mb-3 flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                          <span>
+                            선택 가능 좌석 {remainingSelectableSeatIds.length}석
+                            / 후보 {selectableSeatIds.length}석
+                          </span>
+                          {activeYes24SeatGroup ? (
+                            <span>
+                              표시 그룹 {activeYes24SeatGroup.label} ·{" "}
+                              {activeYes24SeatGroup.zones.length}구역
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
+
+                      {activeYes24SeatGroup &&
+                      activeYes24SeatGroupCropBounds &&
+                      activeYes24SeatGroupSeats.length > 0 ? (
+                        <div className="rounded-md border bg-background p-2">
+                          <div
+                            className="relative w-full bg-background"
+                            style={{
+                              aspectRatio: `${activeYes24SeatGroupCropBounds.width} / ${
+                                activeYes24SeatGroupCropBounds.height *
+                                seatMapHeightRatio
+                              }`,
+                            }}
+                          >
+                            <svg
+                              className="absolute inset-0 h-full w-full"
+                              viewBox="0 0 100 100"
+                              preserveAspectRatio="none"
+                              aria-hidden="true"
+                            >
+                              {activeYes24SeatGroup.zones.map((zone) => {
+                                const polygon = getZoneDisplayPolygon(zone);
+
+                                if (!polygon) {
+                                  return null;
+                                }
+
+                                return (
+                                  <polygon
+                                    key={zone.id}
+                                    points={getPolygonPointsAttribute(
+                                      mapPolygonToBounds(
+                                        polygon,
+                                        activeYes24SeatGroupCropBounds,
+                                      ),
+                                    )}
+                                    className="fill-emerald-400/10 stroke-emerald-700/60"
+                                    strokeWidth={0.55}
+                                    vectorEffect="non-scaling-stroke"
+                                  />
+                                );
+                              })}
+                            </svg>
+                            {activeYes24SeatGroupSeats.map((seat) => {
+                              const isSelected = selectedSeatId === seat.id;
+                              const isCandidate =
+                                remainingSelectableSeatIdSet.has(seat.id);
+                              const isSoldOut = soldOutSeatIdSet.has(seat.id);
+                              const isSelectable =
+                                seat.status === "available" && !isCompleting;
+                              const mappedPoint = mapPointToBounds(
+                                {
+                                  x: seat.x,
+                                  y: seat.y,
+                                },
+                                activeYes24SeatGroupCropBounds,
+                              );
+                              const seatWidthPercent =
+                                getYes24GroupSeatWidthPercent(
+                                  seat,
+                                  activeYes24SeatGroupCropBounds,
+                                );
+
+                              return (
+                                <button
+                                  key={seat.id}
+                                  type="button"
+                                  className={[
+                                    "absolute -translate-x-1/2 -translate-y-1/2 rounded-[2px] border p-0 text-[0px] leading-none shadow-[0_0_0_1px_rgba(255,255,255,0.95),0_2px_7px_rgba(15,23,42,0.28)] transition",
+                                    isSelected
+                                      ? "z-20 border-primary bg-primary ring-2 ring-white"
+                                      : "",
+                                    !isSelected && isCandidate
+                                      ? "z-10 border-emerald-950 bg-emerald-400 ring-1 ring-white hover:border-primary hover:bg-primary"
+                                      : "",
+                                    !isSelected && !isCandidate
+                                      ? "border-slate-500 bg-slate-300 opacity-75"
+                                      : "",
+                                    isSoldOut
+                                      ? "border-destructive bg-destructive/70 opacity-85"
+                                      : "",
+                                  ].join(" ")}
+                                  style={{
+                                    left: `${mappedPoint.x * 100}%`,
+                                    top: `${mappedPoint.y * 100}%`,
+                                    width: `min(${YES24_RECT_SEAT_MAX_PIXEL_WIDTH}px, ${seatWidthPercent.toFixed(4)}%)`,
+                                    aspectRatio: `${YES24_RECT_SEAT_WIDTH_HEIGHT_RATIO} / 1`,
+                                  }}
+                                  title={`${seat.zoneName} · ${seat.rowLabel} ${seat.seatNumber}번`}
+                                  aria-label={`${seat.zoneName} ${seat.rowLabel} ${seat.seatNumber}번 좌석`}
+                                  disabled={!isSelectable}
+                                  onClick={() => handleSeatClick(seat)}
+                                >
+                                  {seat.seatNumber}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="rounded-md border bg-background px-4 py-6 text-center text-sm text-muted-foreground">
+                          표시할 구역 그룹 또는 좌석 좌표가 없습니다. 좌석
+                          데이터를 다시 생성해주세요.
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="rounded-md border bg-secondary p-3 xl:max-w-[240px]">
+                      <div className="mb-3 flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                        <span>공연장 미니맵</span>
+                        <span>{yes24SeatGroups.length}그룹</span>
+                      </div>
+
+                      {yes24SeatGroups.length > 0 ? (
+                        <div className="overflow-hidden rounded-md border bg-background">
+                          <div className="relative">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={seatMap.imageUrl}
+                              alt="공연장 미니맵"
+                              className="block h-auto w-full select-none contrast-75 saturate-75"
+                              draggable={false}
+                              onLoad={handleSeatMapImageLoad}
+                              style={{
+                                opacity: DIRECT_SEAT_MAP_IMAGE_OPACITY,
+                              }}
+                            />
+                            <svg
+                              className="absolute inset-0 h-full w-full"
+                              viewBox="0 0 100 100"
+                              preserveAspectRatio="none"
+                              aria-label="공연장 구역 그룹 선택"
+                            >
+                              {yes24SeatGroups.map((group) => {
+                                const isActive =
+                                  activeYes24SeatGroup?.id === group.id;
+
+                                return (
+                                  <g
+                                    key={group.id}
+                                    className={[
+                                      "cursor-pointer transition",
+                                      isActive
+                                        ? "fill-primary/30 stroke-primary"
+                                        : "fill-emerald-400/15 stroke-emerald-600 hover:fill-emerald-400/25",
+                                    ].join(" ")}
+                                    role="button"
+                                    tabIndex={0}
+                                    aria-label={`${group.label} 그룹`}
+                                    onClick={() =>
+                                      handleYes24GroupSelect(group)
+                                    }
+                                    onKeyDown={(event) => {
+                                      if (
+                                        event.key === "Enter" ||
+                                        event.key === " "
+                                      ) {
+                                        event.preventDefault();
+                                        handleYes24GroupSelect(group);
+                                      }
+                                    }}
+                                  >
+                                    <title>{group.label} 그룹</title>
+                                    {group.zones.map((zone) => {
+                                      const polygon =
+                                        getZoneDisplayPolygon(zone);
+
+                                      if (!polygon) {
+                                        return null;
+                                      }
+
+                                      return (
+                                        <polygon
+                                          key={zone.id}
+                                          points={getPolygonPointsAttribute(
+                                            polygon,
+                                          )}
+                                          strokeWidth={isActive ? 0.9 : 0.55}
+                                          vectorEffect="non-scaling-stroke"
+                                        />
+                                      );
+                                    })}
+                                  </g>
+                                );
+                              })}
+                            </svg>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="rounded-md border bg-background px-4 py-6 text-center text-sm text-muted-foreground">
+                          미니맵에 표시할 구역 좌표가 없습니다.
+                        </p>
+                      )}
+                    </div>
                   </div>
                 ) : isSplitSeatSelect && seatSelectView === "seat" ? (
                   <div className="mt-5 rounded-md border bg-secondary p-4">
@@ -1805,8 +2536,7 @@ export function PracticeClient({
                                   remainingSelectableSeatIdSet.has(seat.id);
                                 const isSoldOut = soldOutSeatIdSet.has(seat.id);
                                 const isSelectable =
-                                  seat.status === "available" &&
-                                  !isCompleting;
+                                  seat.status === "available" && !isCompleting;
 
                                 return (
                                   <button
@@ -1820,9 +2550,7 @@ export function PracticeClient({
                                       !isSelected && isCandidate
                                         ? "border-emerald-500 bg-emerald-50 text-emerald-900 hover:border-primary"
                                         : "",
-                                      !isCandidate
-                                        ? "opacity-35"
-                                        : "",
+                                      !isCandidate ? "opacity-35" : "",
                                     ].join(" ")}
                                     style={{
                                       maxWidth: `${compactSeatSizePx}px`,
@@ -2015,8 +2743,8 @@ export function PracticeClient({
                       <div className="rounded-md border bg-secondary p-3">
                         <div className="mb-3 text-xs text-muted-foreground">
                           <p>
-                            전체 남은 좌석 {remainingSelectableSeatIds.length}석 /{" "}
-                            전체 {selectableSeatIds.length}석
+                            전체 남은 좌석 {remainingSelectableSeatIds.length}석
+                            / 전체 {selectableSeatIds.length}석
                           </p>
                           {selectedZone ? (
                             <p className="mt-1">
@@ -2113,13 +2841,16 @@ export function PracticeClient({
               )}
               <div>
                 <h2 className="text-xl font-semibold">
-                  {result.status === "success" ? "예매 연습 성공" : "예매 연습 실패"}
+                  {result.status === "success"
+                    ? "예매 연습 성공"
+                    : "예매 연습 실패"}
                 </h2>
                 <p className="mt-1 text-sm text-muted-foreground">
                   소요 시간 {(result.elapsedMs / 1000).toFixed(1)}초
                 </p>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  시작 버튼 반응 시간 {(result.startDelayMs / 1000).toFixed(1)}초
+                  시작 버튼 반응 시간 {(result.startDelayMs / 1000).toFixed(1)}
+                  초
                 </p>
               </div>
             </div>
@@ -2144,7 +2875,9 @@ export function PracticeClient({
             <div className="mt-5 flex flex-wrap gap-2">
               <Button onClick={handleRestart}>다시 연습하기</Button>
               <Button asChild variant="outline">
-                <Link href={`/concerts/${concert.id}`}>공연 상세로 돌아가기</Link>
+                <Link href={`/concerts/${concert.id}`}>
+                  공연 상세로 돌아가기
+                </Link>
               </Button>
             </div>
           </section>
