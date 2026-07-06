@@ -255,7 +255,7 @@ export function ReviewClient({
               <Link
                 key={review.id}
                 href={`/reviews/${review.id}`}
-                className="block rounded-md border p-4 transition hover:border-primary/60 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="group block rounded-md border p-4 transition hover:border-primary/60 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="flex min-w-0 items-center gap-3">
@@ -307,6 +307,13 @@ export function ReviewClient({
                 <p className="mt-4 line-clamp-2 text-sm leading-6 text-muted-foreground">
                   {review.content}
                 </p>
+
+                <div className="mt-3 flex justify-end">
+                  <ChevronRight
+                    className="h-4 w-4 text-muted-foreground transition group-hover:translate-x-0.5 group-hover:text-primary"
+                    aria-hidden="true"
+                  />
+                </div>
               </Link>
             ))
           ) : (
