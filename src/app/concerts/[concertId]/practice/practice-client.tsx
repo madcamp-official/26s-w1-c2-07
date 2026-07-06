@@ -375,7 +375,7 @@ const YES24_LARGE_ZONE_AREA_THRESHOLD = 0.055;
 const YES24_LARGE_ZONE_WIDTH_THRESHOLD = 0.34;
 const YES24_LARGE_ZONE_HEIGHT_THRESHOLD = 0.28;
 const YES24_RECT_SEAT_WIDTH_HEIGHT_RATIO = 0.78;
-const YES24_RECT_SEAT_MAX_PIXEL_WIDTH = 18;
+const YES24_RECT_SEAT_MAX_PIXEL_WIDTH = 12;
 const YES24_RECT_SEAT_MIN_WIDTH_PERCENT = 1.2;
 const YES24_RECT_SEAT_MAX_WIDTH_PERCENT = 4.2;
 
@@ -1279,6 +1279,13 @@ export function PracticeClient({
         : null,
     [activeYes24SeatGroup],
   );
+  const activeYes24SeatGroupDisplayRatio = activeYes24SeatGroupCropBounds
+    ? Math.max(
+        (activeYes24SeatGroupCropBounds.height * seatMapHeightRatio) /
+          Math.max(activeYes24SeatGroupCropBounds.width, GEOMETRY_EPSILON),
+        GEOMETRY_EPSILON,
+      )
+    : 1;
   const schedulesByDate = useMemo(() => {
     const scheduleMap = new Map<string, ScheduleSummary[]>();
 
@@ -2856,7 +2863,12 @@ export function PracticeClient({
             ) : null}
 
             {currentStep === "SEAT_SELECT" ? (
-              <section className="rounded-lg border bg-card p-5 shadow-sm">
+              <section
+                className={[
+                  "rounded-lg border bg-card shadow-sm",
+                  isYes24SeatSelect ? "p-3 sm:p-4" : "p-5",
+                ].join(" ")}
+              >
                 <div className="flex items-center gap-3">
                   <Ticket className="h-5 w-5 text-muted-foreground" />
                   <div>
@@ -2953,9 +2965,7 @@ export function PracticeClient({
                                 aria-label={`${seat.zoneName} ${seat.rowLabel} ${seat.seatNumber}번 좌석`}
                                 disabled={!isSelectable}
                                 onClick={() => handleSeatClick(seat)}
-                              >
-                                {seat.seatNumber}
-                              </button>
+                              />
                             );
                           })}
                         </div>
@@ -2968,16 +2978,16 @@ export function PracticeClient({
                     )}
                   </div>
                 ) : isYes24SeatSelect ? (
-                  <div className="mt-5 grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_240px]">
-                    <div className="rounded-md border bg-secondary p-3">
-                      <div className="mb-3 flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
-                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <div className="mt-3 grid items-start gap-2 xl:grid-cols-[minmax(0,1fr)_150px] 2xl:grid-cols-[minmax(0,1fr)_160px]">
+                    <div className="rounded-md border bg-secondary p-2.5">
+                      <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                           <span>
                             선택 가능 좌석 {remainingSelectableSeatIds.length}석
                             / 후보 {selectableSeatIds.length}석
                           </span>
                           {activeYes24SeatGroup ? (
-                            <span>
+                            <span className="truncate">
                               표시 그룹 {activeYes24SeatGroup.label} ·{" "}
                               {activeYes24SeatGroup.zones.length}구역
                             </span>
@@ -2990,8 +3000,9 @@ export function PracticeClient({
                       activeYes24SeatGroupSeats.length > 0 ? (
                         <div className="rounded-md border bg-background p-2">
                           <div
-                            className="relative w-full bg-background"
+                            className="relative mx-auto bg-background"
                             style={{
+                              width: `min(100%, 520px, ${(58 / activeYes24SeatGroupDisplayRatio).toFixed(2)}vh)`,
                               aspectRatio: `${activeYes24SeatGroupCropBounds.width} / ${
                                 activeYes24SeatGroupCropBounds.height *
                                 seatMapHeightRatio
@@ -3076,9 +3087,7 @@ export function PracticeClient({
                                   aria-label={`${seat.zoneName} ${seat.rowLabel} ${seat.seatNumber}번 좌석`}
                                   disabled={!isSelectable}
                                   onClick={() => handleSeatClick(seat)}
-                                >
-                                  {seat.seatNumber}
-                                </button>
+                                />
                               );
                             })}
                           </div>
@@ -3091,15 +3100,15 @@ export function PracticeClient({
                       )}
                     </div>
 
-                    <div className="rounded-md border bg-secondary p-3 xl:max-w-[240px]">
-                      <div className="mb-3 flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                    <div className="rounded-md border bg-secondary p-2.5 xl:max-w-[150px] 2xl:max-w-[160px]">
+                      <div className="mb-2 flex items-center justify-between gap-2 text-xs text-muted-foreground">
                         <span>공연장 미니맵</span>
                         <span>{yes24SeatGroups.length}그룹</span>
                       </div>
 
                       {yes24SeatGroups.length > 0 ? (
                         <div className="overflow-hidden rounded-md border bg-background">
-                          <div className="relative">
+                          <div className="relative w-full">
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img
                               src={seatMap.imageUrl}
