@@ -62,17 +62,21 @@ describe("concert sync", () => {
           {
             id: "schedule-1",
             performanceDate: firstDate,
+            roundName: "기존 회차",
+            startTime: "18:00",
           },
           {
             id: "stale-schedule",
             performanceDate: staleDate,
+            roundName: "3일차",
+            startTime: "19:00",
           },
         ]),
         update: vi.fn(async () => ({
           id: "schedule-1",
         })),
-        create: vi.fn(async () => ({
-          id: "schedule-2",
+        createMany: vi.fn(async () => ({
+          count: 1,
         })),
         deleteMany: vi.fn(async () => ({
           count: 1,
@@ -102,16 +106,15 @@ describe("concert sync", () => {
         startTime: "19:00",
       },
     });
-    expect(tx.concertSchedule.create).toHaveBeenCalledWith({
-      data: {
-        concertId: "concert-1",
-        performanceDate: secondDate,
-        roundName: "2일차",
-        startTime: "19:00",
-      },
-      select: {
-        id: true,
-      },
+    expect(tx.concertSchedule.createMany).toHaveBeenCalledWith({
+      data: [
+        {
+          concertId: "concert-1",
+          performanceDate: secondDate,
+          roundName: "2일차",
+          startTime: "19:00",
+        },
+      ],
     });
     expect(tx.concertSchedule.deleteMany).toHaveBeenCalledWith({
       where: {
