@@ -12,13 +12,12 @@ import {
   Megaphone,
   MessageSquare,
   PlayCircle,
-  WandSparkles,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { getCurrentUser } from "@/lib/auth";
 import { getConcertDetail } from "@/lib/concerts";
-import { formatDateRange, formatPriceRange } from "@/utils/format";
+import { formatDateRange } from "@/utils/format";
 
 const concertIdSchema = z.string().uuid();
 
@@ -117,10 +116,6 @@ export default async function ConcertDetailPage({
     {
       label: "공연장",
       value: `${concert.region} · ${concert.venueName}`,
-    },
-    {
-      label: "가격정보",
-      value: formatPriceRange(concert.priceMin, concert.priceMax),
     },
     {
       label: "좌석 데이터",
@@ -227,17 +222,17 @@ export default async function ConcertDetailPage({
           <ActionCard
             href={`/concerts/${concert.id}/seat-map`}
             icon={<ImageUp className="h-8 w-8" aria-hidden="true" />}
-            title={concert.hasSeatMap ? "배치도 관리" : "배치도 등록"}
+            title="배치도 등록"
             description="공연장의 좌석 배치도를 등록하고 AI 분석 결과를 확인하세요."
           />
           <ActionCard
-            href={`/concerts/${concert.id}/practice`}
+            href={`/practice?concertId=${concert.id}`}
             icon={<PlayCircle className="h-8 w-8" aria-hidden="true" />}
             title="티켓팅 연습"
             description="사이트별 예매 흐름과 좌석 선택 과정을 실전처럼 연습하세요."
           />
           <ActionCard
-            href={`/concerts/${concert.id}/reviews`}
+            href={`/reviews?concertId=${concert.id}`}
             icon={<MessageSquare className="h-8 w-8" aria-hidden="true" />}
             title="좌석 리뷰"
             description="다른 사람들의 좌석 후기를 확인하고 나의 리뷰도 남겨보세요."
@@ -256,21 +251,14 @@ export default async function ConcertDetailPage({
             </div>
           </div>
 
-          {concert.latestSeatMap ? (
-            <Button asChild className="w-full" size="lg">
-              <Link href={`/concerts/${concert.id}/seat-map`}>
-                AI 분석 결과 보기
-                <WandSparkles className="h-4 w-4" aria-hidden="true" />
-              </Link>
-            </Button>
-          ) : (
+          {!concert.latestSeatMap ? (
             <Button asChild className="w-full" size="lg">
               <Link href={`/concerts/${concert.id}/seat-map`}>
                 배치도 업로드하기
                 <ArrowRight className="h-4 w-4" aria-hidden="true" />
               </Link>
             </Button>
-          )}
+          ) : null}
         </aside>
       </section>
     </main>

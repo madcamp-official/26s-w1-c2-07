@@ -2,8 +2,11 @@ import Image from "next/image";
 import Link from "next/link";
 import {
   CalendarDays,
+  ChevronLeft,
+  ChevronRight,
   Grid3X3,
   Heart,
+  Info,
   List,
   MapPin,
   MessageSquare,
@@ -20,7 +23,9 @@ import {
   getConcertList,
   type ConcertListScope,
 } from "@/lib/concerts";
-import { formatDateRange, formatPriceRange } from "@/utils/format";
+import { formatDateRange } from "@/utils/format";
+
+const CONCERT_PAGE_SIZE = 8;
 
 const scopeTabs: Array<{
   value: ConcertListScope;
@@ -50,6 +55,7 @@ type ConcertListPageProps = {
     q?: string;
     region?: string;
     genre?: string;
+    page?: string;
   }>;
 };
 
@@ -65,6 +71,12 @@ function parseFilterValue(value: string | undefined, maxLength: number) {
   const trimmed = value?.trim();
 
   return trimmed ? trimmed.slice(0, maxLength) : undefined;
+}
+
+function parsePage(value: string | undefined) {
+  const page = Number.parseInt(value ?? "", 10);
+
+  return Number.isFinite(page) && page > 0 ? page : 1;
 }
 
 function getConcertScopeHref(
@@ -89,6 +101,35 @@ function getConcertScopeHref(
 
   if (filters.genre) {
     params.set("genre", filters.genre);
+  }
+
+  return `/concerts?${params.toString()}`;
+}
+
+function getConcertPageHref(
+  page: number,
+  input: {
+    scope: ConcertListScope;
+    q?: string;
+    region?: string;
+    genre?: string;
+  },
+) {
+  const params = new URLSearchParams({
+    scope: input.scope,
+    page: String(page),
+  });
+
+  if (input.q) {
+    params.set("q", input.q);
+  }
+
+  if (input.region) {
+    params.set("region", input.region);
+  }
+
+  if (input.genre) {
+    params.set("genre", input.genre);
   }
 
   return `/concerts?${params.toString()}`;
@@ -128,6 +169,7 @@ export default async function ConcertListPage({
     getCurrentUser(),
   ]);
   const scope = parseScope(resolvedSearchParams?.scope);
+  const requestedPage = parsePage(resolvedSearchParams?.page);
   const filters = {
     q: parseFilterValue(resolvedSearchParams?.q, 100),
     region: parseFilterValue(resolvedSearchParams?.region, 50),
@@ -146,6 +188,16 @@ export default async function ConcertListPage({
   const hasActiveFilters = Boolean(filters.q || filters.region || filters.genre);
   const resetHref = getConcertScopeHref(scope, {});
   const countLabel = hasActiveFilters ? "검색 결과" : "등록된 공연";
+  const totalConcertCount = concerts.length;
+  const totalPages = Math.max(1, Math.ceil(totalConcertCount / CONCERT_PAGE_SIZE));
+  const page = Math.min(requestedPage, totalPages);
+  const visibleConcerts = concerts.slice(
+    (page - 1) * CONCERT_PAGE_SIZE,
+    page * CONCERT_PAGE_SIZE,
+  );
+  const firstConcertNumber =
+    totalConcertCount === 0 ? 0 : (page - 1) * CONCERT_PAGE_SIZE + 1;
+  const lastConcertNumber = Math.min(page * CONCERT_PAGE_SIZE, totalConcertCount);
   const emptyTitle = hasActiveFilters
     ? "검색 결과가 없습니다"
     : "등록된 공연이 없습니다";
@@ -284,16 +336,23 @@ export default async function ConcertListPage({
           ) : (
             countLabel
           )}{" "}
-          {concerts.length}건
+          {totalConcertCount}건
         </h2>
-        <span className="rounded-md border bg-card px-3 py-2 text-sm font-medium text-muted-foreground">
-          최신 등록순
-        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          {totalConcertCount > 0 ? (
+            <span className="rounded-md border bg-card px-3 py-2 text-sm font-medium text-muted-foreground">
+              {firstConcertNumber}-{lastConcertNumber} / {totalConcertCount}
+            </span>
+          ) : null}
+          <span className="rounded-md border bg-card px-3 py-2 text-sm font-medium text-muted-foreground">
+            최신 등록순
+          </span>
+        </div>
       </div>
 
-      {concerts.length > 0 ? (
+      {visibleConcerts.length > 0 ? (
         <section className="mt-5 grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
-          {concerts.map((concert) => (
+          {visibleConcerts.map((concert) => (
             <article
               key={concert.id}
               className="overflow-hidden rounded-lg border bg-card shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
@@ -338,31 +397,31 @@ export default async function ConcertListPage({
                     <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
                     {concert.region} · {concert.venueName}
                   </p>
-                  <p className="flex items-center gap-1.5">
-                    <Ticket className="h-3.5 w-3.5" aria-hidden="true" />
-                    {formatPriceRange(concert.priceMin, concert.priceMax)}
-                  </p>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2 text-xs">
                   <Button asChild variant="outline" size="sm">
-                    <Link href={`/concerts/${concert.id}`}>상세보기</Link>
+                    <Link href={`/concerts/${concert.id}`}>
+                      <Info className="h-3.5 w-3.5" aria-hidden="true" />
+                      상세보기
+                    </Link>
                   </Button>
                   <Button asChild variant="outline" size="sm">
                     <Link href={`/concerts/${concert.id}/seat-map`}>
                       <UploadCloud className="h-3.5 w-3.5" aria-hidden="true" />
-                      배치도
-                    </Link>
-                  </Button>
-                  <Button asChild variant="outline" size="sm">
-                    <Link href={`/concerts/${concert.id}/reviews`}>
-                      <MessageSquare className="h-3.5 w-3.5" aria-hidden="true" />
-                      리뷰
+                      배치도 등록
                     </Link>
                   </Button>
                   <Button asChild size="sm">
-                    <Link href={`/concerts/${concert.id}/practice`}>
-                      티켓팅
+                    <Link href={`/practice?concertId=${concert.id}`}>
+                      <Ticket className="h-3.5 w-3.5" aria-hidden="true" />
+                      티켓팅 연습
+                    </Link>
+                  </Button>
+                  <Button asChild variant="outline" size="sm">
+                    <Link href={`/reviews?concertId=${concert.id}`}>
+                      <MessageSquare className="h-3.5 w-3.5" aria-hidden="true" />
+                      좌석 리뷰
                     </Link>
                   </Button>
                 </div>
@@ -378,6 +437,52 @@ export default async function ConcertListPage({
           </p>
         </section>
       )}
+
+      {totalPages > 1 ? (
+        <nav className="mt-6 flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-muted-foreground">
+            {page} / {totalPages}
+          </p>
+          <div className="flex items-center gap-2">
+            {page > 1 ? (
+              <Button asChild variant="outline" size="sm">
+                <Link
+                  href={getConcertPageHref(page - 1, {
+                    scope,
+                    ...filters,
+                  })}
+                >
+                  <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+                  이전
+                </Link>
+              </Button>
+            ) : (
+              <Button type="button" variant="outline" size="sm" disabled>
+                <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+                이전
+              </Button>
+            )}
+            {page < totalPages ? (
+              <Button asChild variant="outline" size="sm">
+                <Link
+                  href={getConcertPageHref(page + 1, {
+                    scope,
+                    ...filters,
+                  })}
+                >
+                  다음
+                  <ChevronRight className="h-4 w-4" aria-hidden="true" />
+                </Link>
+              </Button>
+            ) : (
+              <Button type="button" variant="outline" size="sm" disabled>
+                다음
+                <ChevronRight className="h-4 w-4" aria-hidden="true" />
+              </Button>
+            )}
+          </div>
+        </nav>
+      ) : null}
     </main>
   );
 }
