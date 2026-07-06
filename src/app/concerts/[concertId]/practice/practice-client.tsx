@@ -152,6 +152,7 @@ type PracticeClientProps = {
     imageHeight: number | null;
   };
   zones: SeatZoneSummary[];
+  layout?: "default" | "panel";
 };
 
 type PracticePhase = "setup" | "countdown" | "running" | "result";
@@ -1040,7 +1041,9 @@ export function PracticeClient({
   schedules,
   seatMap,
   zones,
+  layout = "default",
 }: PracticeClientProps) {
+  const isPanelLayout = layout === "panel";
   const [phase, setPhase] = useState<PracticePhase>("setup");
   const [templateType, setTemplateType] =
     useState<TicketTemplateType>("nol_old");
@@ -2266,7 +2269,13 @@ export function PracticeClient({
   }
 
   return (
-    <div className="mt-5 grid gap-6 lg:grid-cols-[1fr_340px]">
+    <div
+      className={
+        isPanelLayout
+          ? "relative min-w-0"
+          : "mt-5 grid gap-6 lg:grid-cols-[1fr_340px]"
+      }
+    >
       {toastMessage ? (
         <div
           className="fixed left-1/2 top-6 z-50 w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 rounded-md border bg-background px-4 py-3 text-sm font-medium shadow-lg"
@@ -2276,12 +2285,26 @@ export function PracticeClient({
         </div>
       ) : null}
 
-      <section className="rounded-lg border bg-card p-6 shadow-sm">
+      <section
+        className={
+          isPanelLayout
+            ? "rounded-lg border bg-card p-5 shadow-sm"
+            : "rounded-lg border bg-card p-6 shadow-sm"
+        }
+      >
         <div>
-          <p className="text-sm text-muted-foreground">
-            {concert.artist} · {concert.region} · {concert.venueName}
-          </p>
-          <h1 className="mt-1 text-2xl font-black">티켓팅 연습</h1>
+          {!isPanelLayout ? (
+            <p className="text-sm text-muted-foreground">
+              {concert.artist} · {concert.region} · {concert.venueName}
+            </p>
+          ) : null}
+          <h1
+            className={
+              isPanelLayout ? "text-xl font-black" : "mt-1 text-2xl font-black"
+            }
+          >
+            티켓팅 연습
+          </h1>
           <p className="mt-3 text-sm leading-6 text-muted-foreground">
             실제 예매가 아닌 연습용 흐름입니다. 좌석은 AI 분석 구역을 바탕으로
             생성한 VirtualSeat입니다.
@@ -2566,9 +2589,9 @@ export function PracticeClient({
                             ? seatSelectView === "seat"
                               ? "선택한 구역의 남아있는 좌석을 선택합니다."
                               : "배치도 또는 미니맵에서 구역을 선택한 뒤 남아있는 좌석을 선택합니다."
-                          : isSplitSeatSelect && seatSelectView === "seat"
-                            ? "선택한 구역의 남아있는 좌석을 선택합니다."
-                            : "먼저 배치도에서 구역을 선택한 뒤 남아있는 좌석을 선택합니다."}
+                            : isSplitSeatSelect && seatSelectView === "seat"
+                              ? "선택한 구역의 남아있는 좌석을 선택합니다."
+                              : "먼저 배치도에서 구역을 선택한 뒤 남아있는 좌석을 선택합니다."}
                     </p>
                   </div>
                 </div>
@@ -2885,8 +2908,7 @@ export function PracticeClient({
                         </span>
                         {selectedZone ? (
                           <span>
-                            선택 구역 {selectedZone.name} ·{" "}
-                            {selectedZone.grade}
+                            선택 구역 {selectedZone.name} · {selectedZone.grade}
                           </span>
                         ) : null}
                       </div>
@@ -3269,48 +3291,50 @@ export function PracticeClient({
         ) : null}
       </section>
 
-      <aside className="space-y-4">
-        <section className="rounded-lg border bg-card p-5">
-          <h2 className="text-lg font-semibold">{concert.title}</h2>
-          <div className="mt-4 grid gap-3 text-sm text-muted-foreground">
-            <p>{concert.artist}</p>
-            <p>
-              {concert.region} · {concert.venueName}
-            </p>
-            <p>{formatPriceRange(concert.priceMin, concert.priceMax)}</p>
-          </div>
-        </section>
+      {!isPanelLayout ? (
+        <aside className="space-y-4">
+          <section className="rounded-lg border bg-card p-5">
+            <h2 className="text-lg font-semibold">{concert.title}</h2>
+            <div className="mt-4 grid gap-3 text-sm text-muted-foreground">
+              <p>{concert.artist}</p>
+              <p>
+                {concert.region} · {concert.venueName}
+              </p>
+              <p>{formatPriceRange(concert.priceMin, concert.priceMax)}</p>
+            </div>
+          </section>
 
-        <section className="rounded-lg border bg-card p-5">
-          <h2 className="text-lg font-semibold">연습 요약</h2>
-          <div className="mt-4 grid gap-3 text-sm">
-            <div className="flex justify-between gap-3">
-              <span className="text-muted-foreground">사이트</span>
-              <span>{PRACTICE_TEMPLATE_LABELS[templateType]}</span>
+          <section className="rounded-lg border bg-card p-5">
+            <h2 className="text-lg font-semibold">연습 요약</h2>
+            <div className="mt-4 grid gap-3 text-sm">
+              <div className="flex justify-between gap-3">
+                <span className="text-muted-foreground">사이트</span>
+                <span>{PRACTICE_TEMPLATE_LABELS[templateType]}</span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span className="text-muted-foreground">난이도</span>
+                <span>{PRACTICE_DIFFICULTY_LABELS[difficulty]}</span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span className="text-muted-foreground">소요 시간</span>
+                <span>{formatTimer(elapsedMs)}</span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span className="text-muted-foreground">회차</span>
+                <span>{selectedSchedule?.roundName ?? "미선택"}</span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span className="text-muted-foreground">좌석</span>
+                <span>
+                  {selectedZone && selectedSeat
+                    ? `${selectedZone.name} ${selectedSeat.rowLabel} ${selectedSeat.seatNumber}번`
+                    : "미선택"}
+                </span>
+              </div>
             </div>
-            <div className="flex justify-between gap-3">
-              <span className="text-muted-foreground">난이도</span>
-              <span>{PRACTICE_DIFFICULTY_LABELS[difficulty]}</span>
-            </div>
-            <div className="flex justify-between gap-3">
-              <span className="text-muted-foreground">소요 시간</span>
-              <span>{formatTimer(elapsedMs)}</span>
-            </div>
-            <div className="flex justify-between gap-3">
-              <span className="text-muted-foreground">회차</span>
-              <span>{selectedSchedule?.roundName ?? "미선택"}</span>
-            </div>
-            <div className="flex justify-between gap-3">
-              <span className="text-muted-foreground">좌석</span>
-              <span>
-                {selectedZone && selectedSeat
-                  ? `${selectedZone.name} ${selectedSeat.rowLabel} ${selectedSeat.seatNumber}번`
-                  : "미선택"}
-              </span>
-            </div>
-          </div>
-        </section>
-      </aside>
+          </section>
+        </aside>
+      ) : null}
     </div>
   );
 }
