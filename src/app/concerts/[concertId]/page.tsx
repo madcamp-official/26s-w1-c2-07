@@ -12,13 +12,12 @@ import {
   Megaphone,
   MessageSquare,
   PlayCircle,
-  Ticket,
   WandSparkles,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { getConcertDetail } from "@/lib/concerts";
-import { formatDateRange, formatDateTime, formatPriceRange } from "@/utils/format";
+import { formatDateRange, formatPriceRange } from "@/utils/format";
 
 const concertIdSchema = z.string().uuid();
 
@@ -28,13 +27,7 @@ type ConcertDetailPageProps = {
   }>;
 };
 
-function ConcertPoster({
-  src,
-  title,
-}: {
-  src: string | null;
-  title: string;
-}) {
+function ConcertPoster({ src, title }: { src: string | null; title: string }) {
   return (
     <div className="relative aspect-square w-full overflow-hidden rounded-lg border bg-secondary shadow-sm">
       {src ? (
@@ -108,8 +101,6 @@ export default async function ConcertDetailPage({
     concert.latestSeatMap?.analysisStatus === "success" &&
     concert.latestSeatMap.zoneCount > 0;
   const concertDateRange = formatDateRange(concert.startDate, concert.endDate);
-  const shouldShowScheduleRangeFallback =
-    concert.schedules.length <= 1 && concertDateRange.includes(" - ");
   const infoRows = [
     {
       label: "공연소개",
@@ -181,12 +172,11 @@ export default async function ConcertDetailPage({
                   {concert.venueName}
                 </p>
                 <p className="flex items-center gap-2">
-                  <CalendarDays className="h-5 w-5 text-primary" aria-hidden="true" />
+                  <CalendarDays
+                    className="h-5 w-5 text-primary"
+                    aria-hidden="true"
+                  />
                   {formatDateRange(concert.startDate, concert.endDate)}
-                </p>
-                <p className="flex items-center gap-2">
-                  <Ticket className="h-5 w-5 text-primary" aria-hidden="true" />
-                  {formatPriceRange(concert.priceMin, concert.priceMax)}
                 </p>
               </div>
 
@@ -211,7 +201,9 @@ export default async function ConcertDetailPage({
               {infoRows.map((row) => (
                 <div key={row.label} className="contents">
                   <dt className="font-black text-foreground">{row.label}</dt>
-                  <dd className="leading-6 text-muted-foreground">{row.value}</dd>
+                  <dd className="leading-6 text-muted-foreground">
+                    {row.value}
+                  </dd>
                 </div>
               ))}
             </dl>
@@ -225,31 +217,6 @@ export default async function ConcertDetailPage({
               </Button>
             ) : null}
           </div>
-
-          <section className="mt-10 rounded-lg border bg-card p-5 shadow-sm">
-            <h2 className="text-lg font-black">공연 일정</h2>
-            {shouldShowScheduleRangeFallback ? (
-              <p className="mt-2 text-sm text-muted-foreground">
-                공연 기간: {concertDateRange}
-              </p>
-            ) : null}
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              {concert.schedules.length > 0 ? (
-                concert.schedules.map((schedule) => (
-                  <div key={schedule.id} className="rounded-md border bg-secondary/60 p-4">
-                    <p className="font-bold">{schedule.roundName}</p>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      {formatDateTime(schedule.performanceDate)}
-                    </p>
-                  </div>
-                ))
-              ) : (
-                <div className="rounded-md border bg-secondary/60 p-4 text-sm text-muted-foreground">
-                  등록된 회차 일정이 없습니다.
-                </div>
-              )}
-            </div>
-          </section>
         </div>
 
         <aside className="space-y-5 lg:border-l lg:pl-10">
@@ -274,7 +241,10 @@ export default async function ConcertDetailPage({
 
           <div className="rounded-lg border bg-primary/5 p-5 text-sm text-muted-foreground">
             <div className="flex items-start gap-3">
-              <Megaphone className="mt-0.5 h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
+              <Megaphone
+                className="mt-0.5 h-5 w-5 shrink-0 text-primary"
+                aria-hidden="true"
+              />
               <p>
                 공연 일정 및 좌석 배치는 주최측 사정에 따라 변경될 수 있습니다.
                 연습용 가상 좌석은 실제 좌석 정보와 다를 수 있습니다.
