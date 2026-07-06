@@ -14,6 +14,8 @@ import Link from "next/link";
 import {
   CalendarDays,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   Clock,
   Loader2,
   ShieldCheck,
@@ -173,6 +175,8 @@ type PracticeSessionResponse = {
   };
 };
 
+const CALENDAR_WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
+
 async function readPracticeSessionResponse(response: Response) {
   const text = await response.text();
 
@@ -198,6 +202,105 @@ function formatDateTime(value: string) {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));
+}
+
+function createLocalCalendarDate(year: number, month: number, day: number) {
+  return new Date(year, month, day, 12);
+}
+
+function getDateParts(value: string) {
+  const dateMatch = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+
+  if (dateMatch) {
+    return {
+      year: Number(dateMatch[1]),
+      month: Number(dateMatch[2]) - 1,
+      day: Number(dateMatch[3]),
+    };
+  }
+
+  const date = new Date(value);
+
+  return {
+    year: date.getFullYear(),
+    month: date.getMonth(),
+    day: date.getDate(),
+  };
+}
+
+function getDateKey(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function getScheduleDate(value: string) {
+  const { year, month, day } = getDateParts(value);
+
+  return createLocalCalendarDate(year, month, day);
+}
+
+function getScheduleDateKey(value: string) {
+  return getDateKey(getScheduleDate(value));
+}
+
+function getInitialCalendarMonth(schedules: ScheduleSummary[]) {
+  const firstScheduleDate = schedules[0]
+    ? getScheduleDate(schedules[0].performanceDate)
+    : new Date();
+
+  return createLocalCalendarDate(
+    firstScheduleDate.getFullYear(),
+    firstScheduleDate.getMonth(),
+    1,
+  );
+}
+
+function getCalendarDays(monthDate: Date) {
+  const firstDay = createLocalCalendarDate(
+    monthDate.getFullYear(),
+    monthDate.getMonth(),
+    1,
+  );
+  const calendarStart = createLocalCalendarDate(
+    firstDay.getFullYear(),
+    firstDay.getMonth(),
+    1 - firstDay.getDay(),
+  );
+
+  return Array.from({ length: 42 }, (_, index) => {
+    const date = createLocalCalendarDate(
+      calendarStart.getFullYear(),
+      calendarStart.getMonth(),
+      calendarStart.getDate() + index,
+    );
+
+    return {
+      date,
+      key: getDateKey(date),
+      day: date.getDate(),
+      isCurrentMonth: date.getMonth() === monthDate.getMonth(),
+    };
+  });
+}
+
+function formatCalendarMonth(date: Date) {
+  return new Intl.DateTimeFormat("ko-KR", {
+    year: "numeric",
+    month: "long",
+  }).format(date);
+}
+
+function formatDateKeyLabel(dateKey: string) {
+  const [year, month, day] = dateKey.split("-").map(Number);
+
+  return new Intl.DateTimeFormat("ko-KR", {
+    month: "long",
+    day: "numeric",
+    weekday: "short",
+  }).format(createLocalCalendarDate(year, month - 1, day));
 }
 
 function formatTimer(milliseconds: number) {
@@ -1061,6 +1164,12 @@ export function PracticeClient({
   const [selectedScheduleId, setSelectedScheduleId] = useState<string | null>(
     null,
   );
+  const [selectedScheduleDateKey, setSelectedScheduleDateKey] = useState<
+    string | null
+  >(null);
+  const [visibleCalendarMonth, setVisibleCalendarMonth] = useState(() =>
+    getInitialCalendarMonth(schedules),
+  );
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
   const [selectedSeatId, setSelectedSeatId] = useState<string | null>(null);
   const [selectedYes24SeatGroupId, setSelectedYes24SeatGroupId] = useState<
@@ -1170,6 +1279,33 @@ export function PracticeClient({
         : null,
     [activeYes24SeatGroup],
   );
+  const schedulesByDate = useMemo(() => {
+    const scheduleMap = new Map<string, ScheduleSummary[]>();
+
+    for (const schedule of schedules) {
+      const dateKey = getScheduleDateKey(schedule.performanceDate);
+      const dateSchedules = scheduleMap.get(dateKey) ?? [];
+
+      dateSchedules.push(schedule);
+      scheduleMap.set(dateKey, dateSchedules);
+    }
+
+    return scheduleMap;
+  }, [schedules]);
+  const scheduleDateKeySet = useMemo(
+    () => new Set(schedulesByDate.keys()),
+    [schedulesByDate],
+  );
+  const calendarDays = useMemo(
+    () => getCalendarDays(visibleCalendarMonth),
+    [visibleCalendarMonth],
+  );
+  const selectedDateSchedules = selectedScheduleDateKey
+    ? (schedulesByDate.get(selectedScheduleDateKey) ?? [])
+    : [];
+  const selectedScheduleDateLabel = selectedScheduleDateKey
+    ? formatDateKeyLabel(selectedScheduleDateKey)
+    : null;
   const selectedSchedule =
     schedules.find((schedule) => schedule.id === selectedScheduleId) ?? null;
   const selectedZone =
@@ -1652,6 +1788,37 @@ export function PracticeClient({
     setIsStartRequestSent(false);
   }
 
+  function resetScheduleSelection() {
+    setSelectedScheduleDateKey(null);
+    setSelectedScheduleId(null);
+    setVisibleCalendarMonth(getInitialCalendarMonth(schedules));
+  }
+
+  function moveCalendarMonth(monthOffset: number) {
+    setVisibleCalendarMonth((currentMonth) =>
+      createLocalCalendarDate(
+        currentMonth.getFullYear(),
+        currentMonth.getMonth() + monthOffset,
+        1,
+      ),
+    );
+  }
+
+  function handleScheduleDateSelect(dateKey: string) {
+    if (!schedulesByDate.has(dateKey)) {
+      return;
+    }
+
+    setSelectedScheduleDateKey(dateKey);
+    setSelectedScheduleId(null);
+    setMessage("");
+  }
+
+  function handleScheduleSelect(scheduleId: string) {
+    setSelectedScheduleId(scheduleId);
+    setMessage("");
+  }
+
   function handleStartCountdown() {
     setMessage("");
     setToastMessage("");
@@ -1859,7 +2026,7 @@ export function PracticeClient({
       );
       setCaptchaText(generatePracticeCaptcha(6));
       setCaptchaInput("");
-      setSelectedScheduleId(null);
+      resetScheduleSelection();
       setSelectedSeatId(null);
       setSelectedZoneId(null);
       setSelectedYes24SeatGroupId(null);
@@ -1927,8 +2094,13 @@ export function PracticeClient({
   }
 
   function handleScheduleConfirm() {
+    if (!selectedScheduleDateKey) {
+      setMessage("날짜를 선택해주세요.");
+      return;
+    }
+
     if (!selectedScheduleId) {
-      setMessage("회차를 선택해주세요.");
+      setMessage("시간/회차를 선택해주세요.");
       return;
     }
 
@@ -1994,7 +2166,7 @@ export function PracticeClient({
     setCaptchaInput("");
     setInitialQueueCount(0);
     setQueueCount(0);
-    setSelectedScheduleId(null);
+    resetScheduleSelection();
     setSelectedZoneId(null);
     setSelectedSeatId(null);
     setSelectedYes24SeatGroupId(null);
@@ -2334,7 +2506,7 @@ export function PracticeClient({
                     ].join(" ")}
                     onClick={() => {
                       setTemplateType(type);
-                      setSelectedScheduleId(null);
+                      resetScheduleSelection();
                       setSelectedZoneId(null);
                       setSelectedSeatId(null);
                       setSelectedYes24SeatGroupId(null);
@@ -2555,30 +2727,127 @@ export function PracticeClient({
                   <div>
                     <h2 className="font-semibold">날짜/회차 선택</h2>
                     <p className="mt-1 text-sm text-muted-foreground">
-                      예매할 공연 회차를 선택합니다.
+                      달력에서 날짜를 선택한 뒤 시간/회차를 선택합니다.
                     </p>
                   </div>
                 </div>
-                <div className="mt-5 grid gap-2">
-                  {schedules.map((schedule) => (
-                    <button
-                      key={schedule.id}
-                      type="button"
-                      className={[
-                        "rounded-md border px-4 py-3 text-left transition",
-                        selectedScheduleId === schedule.id
-                          ? "border-primary bg-primary/5"
-                          : "hover:border-primary/60",
-                      ].join(" ")}
-                      onClick={() => setSelectedScheduleId(schedule.id)}
-                    >
-                      <span className="font-medium">{schedule.roundName}</span>
-                      <span className="mt-1 block text-sm text-muted-foreground">
-                        {formatDateTime(schedule.performanceDate)} ·{" "}
-                        {schedule.startTime}
-                      </span>
-                    </button>
-                  ))}
+                <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(220px,0.78fr)]">
+                  <div className="rounded-md border bg-secondary p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        aria-label="이전 달"
+                        onClick={() => moveCalendarMonth(-1)}
+                      >
+                        <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+                      </Button>
+                      <p className="text-sm font-semibold">
+                        {formatCalendarMonth(visibleCalendarMonth)}
+                      </p>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        aria-label="다음 달"
+                        onClick={() => moveCalendarMonth(1)}
+                      >
+                        <ChevronRight className="h-4 w-4" aria-hidden="true" />
+                      </Button>
+                    </div>
+
+                    <div className="mt-4 grid grid-cols-7 gap-1 text-center text-xs font-bold text-muted-foreground">
+                      {CALENDAR_WEEKDAYS.map((weekday) => (
+                        <span key={weekday}>{weekday}</span>
+                      ))}
+                    </div>
+                    <div className="mt-2 grid grid-cols-7 gap-1">
+                      {calendarDays.map((calendarDay) => {
+                        const hasSchedule = scheduleDateKeySet.has(
+                          calendarDay.key,
+                        );
+                        const isSelected =
+                          selectedScheduleDateKey === calendarDay.key;
+
+                        return (
+                          <button
+                            key={calendarDay.key}
+                            type="button"
+                            className={[
+                              "h-10 min-w-0 rounded-md border text-sm font-semibold transition",
+                              calendarDay.isCurrentMonth
+                                ? ""
+                                : "text-muted-foreground/45",
+                              hasSchedule
+                                ? "bg-background hover:border-primary/60"
+                                : "cursor-not-allowed bg-background/45 text-muted-foreground/35",
+                              isSelected
+                                ? "border-primary bg-primary text-primary-foreground hover:border-primary"
+                                : "",
+                            ].join(" ")}
+                            disabled={!hasSchedule}
+                            aria-pressed={isSelected}
+                            onClick={() =>
+                              handleScheduleDateSelect(calendarDay.key)
+                            }
+                          >
+                            {calendarDay.day}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="rounded-md border bg-secondary/60 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <h3 className="font-semibold">시간/회차 선택</h3>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {selectedScheduleDateLabel ??
+                            "날짜를 먼저 선택하세요."}
+                        </p>
+                      </div>
+                      {selectedDateSchedules.length > 0 ? (
+                        <span className="shrink-0 rounded-full border bg-background px-2.5 py-1 text-xs font-medium text-muted-foreground">
+                          {selectedDateSchedules.length}개
+                        </span>
+                      ) : null}
+                    </div>
+
+                    <div className="mt-4 grid gap-2">
+                      {!selectedScheduleDateKey ? (
+                        <p className="rounded-md border bg-background px-4 py-6 text-center text-sm text-muted-foreground">
+                          달력에서 공연 날짜를 선택하세요.
+                        </p>
+                      ) : selectedDateSchedules.length > 0 ? (
+                        selectedDateSchedules.map((schedule) => (
+                          <button
+                            key={schedule.id}
+                            type="button"
+                            className={[
+                              "rounded-md border bg-background px-4 py-3 text-left transition",
+                              selectedScheduleId === schedule.id
+                                ? "border-primary bg-primary/5"
+                                : "hover:border-primary/60",
+                            ].join(" ")}
+                            onClick={() => handleScheduleSelect(schedule.id)}
+                          >
+                            <span className="font-medium">
+                              {schedule.roundName}
+                            </span>
+                            <span className="mt-1 block text-sm text-muted-foreground">
+                              {schedule.startTime || "시간 미정"}
+                            </span>
+                          </button>
+                        ))
+                      ) : (
+                        <p className="rounded-md border bg-background px-4 py-6 text-center text-sm text-muted-foreground">
+                          선택한 날짜에 등록된 회차가 없습니다.
+                        </p>
+                      )}
+                    </div>
+                  </div>
                 </div>
                 <Button className="mt-5" onClick={handleScheduleConfirm}>
                   회차 선택 완료
