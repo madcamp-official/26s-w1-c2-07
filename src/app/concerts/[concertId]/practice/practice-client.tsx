@@ -6,6 +6,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type MouseEvent,
   type SyntheticEvent,
   type WheelEvent,
 } from "react";
@@ -256,6 +257,9 @@ const DIRECT_SEAT_MAP_MAX_ZOOM = 3;
 const DIRECT_SEAT_MAP_ZOOM_STEP = 0.12;
 const DIRECT_SEAT_MAP_IMAGE_OPACITY = 0.38;
 const DIRECT_SEAT_MAX_PIXEL_SIZE = 22;
+const MELON_MINI_MAP_MIN_ZOOM = 1;
+const MELON_MINI_MAP_MAX_ZOOM = 4;
+const MELON_MINI_MAP_ZOOM_STEP = 0.18;
 const GEOMETRY_EPSILON = 0.000001;
 const YES24_GROUP_ADJACENCY_TOLERANCE = 0.035;
 const YES24_GROUP_MAX_ZONE_COUNT = 3;
@@ -1070,6 +1074,9 @@ export function PracticeClient({
   const [isStartRequestSent, setIsStartRequestSent] = useState(false);
   const [isCompleting, setIsCompleting] = useState(false);
   const [seatMapZoom, setSeatMapZoom] = useState(DIRECT_SEAT_MAP_DEFAULT_ZOOM);
+  const [melonMiniMapZoom, setMelonMiniMapZoom] = useState(
+    MELON_MINI_MAP_MIN_ZOOM,
+  );
   const [loadedSeatMapMetrics, setLoadedSeatMapMetrics] = useState<{
     seatMapId: string;
     heightRatio: number;
@@ -1084,12 +1091,22 @@ export function PracticeClient({
   const startClickTimerRef = useRef<number | null>(null);
   const toastTimerRef = useRef<number | null>(null);
   const directSeatMapScrollRef = useRef<HTMLDivElement | null>(null);
+  const melonMiniMapScrollRef = useRef<HTMLDivElement | null>(null);
+  const melonMiniMapDragRef = useRef<{
+    startX: number;
+    startY: number;
+    scrollLeft: number;
+    scrollTop: number;
+    hasMoved: boolean;
+  } | null>(null);
+  const suppressMelonMiniMapClickRef = useRef(false);
 
   const steps = PRACTICE_TEMPLATE_STEPS[templateType];
   const currentStep = phase === "running" ? steps[currentStepIndex] : null;
   const isSplitSeatSelect = templateType === "nol_old";
   const isDirectSeatMapSelect = templateType === "nol_new";
   const isYes24SeatSelect = templateType === "yes24";
+  const isMelonSeatSelect = templateType === "melon";
   const seatMapHeightRatio =
     loadedSeatMapMetrics?.seatMapId === seatMap.id
       ? loadedSeatMapMetrics.heightRatio
@@ -1469,6 +1486,7 @@ export function PracticeClient({
       isYes24SeatSelect ? defaultYes24SeatGroupId : null,
     );
     setSeatSelectView("zone");
+    setMelonMiniMapZoom(MELON_MINI_MAP_MIN_ZOOM);
   }
 
   function prepareStep(step: PracticeStep) {
@@ -1696,6 +1714,99 @@ export function PracticeClient({
     });
   }
 
+  function handleMelonMiniMapWheel(event: WheelEvent<HTMLDivElement>) {
+    if (zoneOverlays.length === 0) {
+      return;
+    }
+
+    event.preventDefault();
+
+    const container = melonMiniMapScrollRef.current;
+
+    if (!container) {
+      return;
+    }
+
+    const containerRect = container.getBoundingClientRect();
+    const pointerX = event.clientX - containerRect.left;
+    const pointerY = event.clientY - containerRect.top;
+    const zoomDirection = event.deltaY < 0 ? 1 : -1;
+    const nextZoom = clampNumber(
+      melonMiniMapZoom + zoomDirection * MELON_MINI_MAP_ZOOM_STEP,
+      MELON_MINI_MAP_MIN_ZOOM,
+      MELON_MINI_MAP_MAX_ZOOM,
+    );
+
+    if (nextZoom === melonMiniMapZoom) {
+      return;
+    }
+
+    const zoomRatio = nextZoom / melonMiniMapZoom;
+    const nextScrollLeft =
+      (container.scrollLeft + pointerX) * zoomRatio - pointerX;
+    const nextScrollTop =
+      (container.scrollTop + pointerY) * zoomRatio - pointerY;
+
+    setMelonMiniMapZoom(nextZoom);
+    window.requestAnimationFrame(() => {
+      container.scrollLeft = nextScrollLeft;
+      container.scrollTop = nextScrollTop;
+    });
+  }
+
+  function handleMelonMiniMapMouseDown(event: MouseEvent<HTMLDivElement>) {
+    if (event.button !== 0 || zoneOverlays.length === 0) {
+      return;
+    }
+
+    const container = melonMiniMapScrollRef.current;
+
+    if (!container) {
+      return;
+    }
+
+    melonMiniMapDragRef.current = {
+      startX: event.clientX,
+      startY: event.clientY,
+      scrollLeft: container.scrollLeft,
+      scrollTop: container.scrollTop,
+      hasMoved: false,
+    };
+  }
+
+  function handleMelonMiniMapMouseMove(event: MouseEvent<HTMLDivElement>) {
+    const dragState = melonMiniMapDragRef.current;
+    const container = melonMiniMapScrollRef.current;
+
+    if (!dragState || !container) {
+      return;
+    }
+
+    const deltaX = event.clientX - dragState.startX;
+    const deltaY = event.clientY - dragState.startY;
+
+    if (Math.abs(deltaX) + Math.abs(deltaY) > 3) {
+      dragState.hasMoved = true;
+      event.preventDefault();
+    }
+
+    container.scrollLeft = dragState.scrollLeft - deltaX;
+    container.scrollTop = dragState.scrollTop - deltaY;
+  }
+
+  function finishMelonMiniMapDrag() {
+    const dragState = melonMiniMapDragRef.current;
+
+    if (dragState?.hasMoved) {
+      suppressMelonMiniMapClickRef.current = true;
+      window.setTimeout(() => {
+        suppressMelonMiniMapClickRef.current = false;
+      }, 150);
+    }
+
+    melonMiniMapDragRef.current = null;
+  }
+
   async function startPractice(finalStartDelayMs: number) {
     if (!isStartReady) {
       handleStartCountdown();
@@ -1737,7 +1848,7 @@ export function PracticeClient({
       setStartDelayMs(
         payload.data.practiceSession.startDelayMs ?? finalStartDelayMs,
       );
-      setCaptchaText(generatePracticeCaptcha());
+      setCaptchaText(generatePracticeCaptcha(6));
       setCaptchaInput("");
       setSelectedScheduleId(null);
       setSelectedSeatId(null);
@@ -1840,9 +1951,17 @@ export function PracticeClient({
     setSelectedSeatId(null);
     setMessage(`${zone.name} 구역을 선택했습니다. 남아있는 좌석을 선택하세요.`);
 
-    if (isSplitSeatSelect) {
+    if (isSplitSeatSelect || isMelonSeatSelect) {
       setSeatSelectView("seat");
     }
+  }
+
+  function handleMelonMiniMapZoneSelect(zone: SeatZoneWithGeometry) {
+    if (suppressMelonMiniMapClickRef.current) {
+      return;
+    }
+
+    handleZoneSelect(zone);
   }
 
   function handleYes24GroupSelect(group: Yes24SeatGroup) {
@@ -1871,12 +1990,279 @@ export function PracticeClient({
     setSelectedSeatId(null);
     setSelectedYes24SeatGroupId(null);
     setSeatSelectView("zone");
+    setMelonMiniMapZoom(MELON_MINI_MAP_MIN_ZOOM);
     setSelectableSeatIds([]);
     setSoldOutSeatIds([]);
     setMessage("");
     setToastMessage("");
     setResult(null);
     completingRef.current = false;
+  }
+
+  function handleSeatMapOverview() {
+    setSeatSelectView("zone");
+    setSelectedZoneId(null);
+    setSelectedSeatId(null);
+    setMessage("배치도에서 구역을 다시 선택하세요.");
+  }
+
+  function renderSeatZoneMap({
+    alt,
+    ariaLabel,
+    onZoneSelect = handleZoneSelect,
+    showLabels = true,
+    miniMap = false,
+  }: {
+    alt: string;
+    ariaLabel: string;
+    onZoneSelect?: (zone: SeatZoneWithGeometry) => void;
+    showLabels?: boolean;
+    miniMap?: boolean;
+  }) {
+    return (
+      <div className="relative">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={seatMap.imageUrl}
+          alt={alt}
+          className={[
+            "block h-auto w-full select-none",
+            miniMap ? "contrast-75 saturate-75" : "",
+          ].join(" ")}
+          draggable={false}
+          onLoad={handleSeatMapImageLoad}
+          style={
+            miniMap
+              ? {
+                  opacity: DIRECT_SEAT_MAP_IMAGE_OPACITY,
+                }
+              : undefined
+          }
+        />
+        <svg
+          className="absolute inset-0 h-full w-full"
+          viewBox="0 0 100 100"
+          preserveAspectRatio="none"
+          aria-label={ariaLabel}
+        >
+          {zoneOverlays.map((zone) => {
+            const isSelected = selectedZone?.id === zone.id;
+            const needsGeometryReview = !zone.polygon;
+            const zoneLabel = `${zone.name} ${zone.grade}`;
+
+            return (
+              <g
+                key={zone.id}
+                className={[
+                  "cursor-pointer transition",
+                  miniMap && isSelected && !needsGeometryReview
+                    ? "fill-primary/30 stroke-primary"
+                    : "",
+                  miniMap && isSelected && needsGeometryReview
+                    ? "fill-amber-400/25 stroke-amber-600"
+                    : "",
+                  miniMap && !isSelected
+                    ? "fill-transparent stroke-slate-400/70 hover:fill-emerald-400/15 hover:stroke-emerald-600"
+                    : "",
+                  !miniMap && isSelected && !needsGeometryReview
+                    ? "fill-primary/25 stroke-primary"
+                    : "",
+                  !miniMap && isSelected && needsGeometryReview
+                    ? "fill-amber-400/25 stroke-amber-600"
+                    : "",
+                  !miniMap && !isSelected && needsGeometryReview
+                    ? "fill-amber-400/15 stroke-amber-500 hover:fill-amber-400/25"
+                    : "",
+                  !miniMap && !isSelected && !needsGeometryReview
+                    ? "fill-emerald-400/15 stroke-emerald-500 hover:fill-emerald-400/25"
+                    : "",
+                ].join(" ")}
+                role="button"
+                tabIndex={0}
+                aria-label={zoneLabel}
+                onClick={() => onZoneSelect(zone)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    onZoneSelect(zone);
+                  }
+                }}
+              >
+                <title>{zoneLabel}</title>
+                {zone.polygon ? (
+                  <polygon
+                    points={getPolygonPointsAttribute(zone.polygon)}
+                    strokeWidth={isSelected ? 0.9 : 0.6}
+                    vectorEffect="non-scaling-stroke"
+                  />
+                ) : zone.bbox ? (
+                  <rect
+                    x={zone.bbox.x * 100}
+                    y={zone.bbox.y * 100}
+                    width={zone.bbox.width * 100}
+                    height={zone.bbox.height * 100}
+                    strokeWidth={isSelected ? 0.9 : 0.6}
+                    vectorEffect="non-scaling-stroke"
+                  />
+                ) : null}
+              </g>
+            );
+          })}
+        </svg>
+        {showLabels
+          ? zoneOverlays.map((zone) =>
+              zone.labelPoint ? (
+                <button
+                  key={`${zone.id}-label`}
+                  type="button"
+                  title={
+                    zone.polygon
+                      ? `${zone.name} ${zone.grade}`
+                      : `${zone.name} ${zone.grade} - 외곽선 확인 필요`
+                  }
+                  className={[
+                    "absolute z-10 max-w-36 rounded-md border bg-background/95 px-2 py-1 text-left text-[11px] font-medium shadow-sm transition",
+                    selectedZone?.id === zone.id && zone.polygon
+                      ? "border-primary text-primary"
+                      : selectedZone?.id === zone.id
+                        ? "border-amber-600 text-amber-700"
+                        : !zone.polygon
+                          ? "border-amber-400 text-amber-700 hover:border-amber-600"
+                          : "hover:border-primary/60",
+                  ].join(" ")}
+                  style={{
+                    left: `${zone.labelPoint.x * 100}%`,
+                    top: `${zone.labelPoint.y * 100}%`,
+                    transform: "translate(-50%, -50%)",
+                  }}
+                  onClick={() => onZoneSelect(zone)}
+                >
+                  <span className="block truncate">{zone.name}</span>
+                  <span className="block truncate text-muted-foreground">
+                    {zone.grade}
+                  </span>
+                  {!zone.polygon ? (
+                    <span className="block truncate text-amber-700">
+                      확인 필요
+                    </span>
+                  ) : null}
+                </button>
+              ) : null,
+            )
+          : null}
+      </div>
+    );
+  }
+
+  function renderNolOldSeatGrid({
+    className = "",
+    showResetButton = true,
+  }: {
+    className?: string;
+    showResetButton?: boolean;
+  } = {}) {
+    return (
+      <div
+        className={["rounded-md border bg-secondary p-4", className].join(" ")}
+      >
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="text-sm">
+            <p className="font-medium">
+              {selectedZone
+                ? `${selectedZone.name} · ${selectedZone.grade}`
+                : "구역 미선택"}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              남아있는 좌석을 선택하면 연습이 완료됩니다.
+            </p>
+          </div>
+          {showResetButton ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setSeatSelectView("zone");
+                setSelectedSeatId(null);
+                setMessage("배치도에서 구역을 다시 선택하세요.");
+              }}
+              disabled={isCompleting}
+            >
+              구역 다시 선택
+            </Button>
+          ) : null}
+        </div>
+
+        {!selectedZone ? (
+          <p className="rounded-md border bg-background px-4 py-6 text-center text-sm text-muted-foreground">
+            이전 페이지에서 구역을 먼저 선택하세요.
+          </p>
+        ) : groupedSeats.length > 0 ? (
+          <div className="rounded-md border bg-background p-3">
+            <div className="grid gap-1.5">
+              {groupedSeats.map((row) => (
+                <div
+                  key={row.rowLabel}
+                  className="grid items-center gap-1.5"
+                  style={{
+                    gridTemplateColumns: `2.5rem repeat(${maxSeatsPerRow}, minmax(0, 1fr))`,
+                  }}
+                >
+                  <span className="text-xs text-muted-foreground">
+                    {row.rowLabel}
+                  </span>
+                  {row.seats.map((seat) => {
+                    const isSelected = selectedSeatId === seat.id;
+                    const isCandidate = remainingSelectableSeatIdSet.has(
+                      seat.id,
+                    );
+                    const isSoldOut = soldOutSeatIdSet.has(seat.id);
+                    const isSelectable =
+                      seat.status === "available" && !isCompleting;
+
+                    return (
+                      <button
+                        key={seat.id}
+                        type="button"
+                        className={[
+                          "aspect-square rounded-sm border bg-background text-[10px] font-medium transition",
+                          isSelected
+                            ? "border-primary bg-primary text-primary-foreground"
+                            : "",
+                          !isSelected && isCandidate
+                            ? "border-emerald-500 bg-emerald-50 text-emerald-900 hover:border-primary"
+                            : "",
+                          !isCandidate ? "opacity-35" : "",
+                        ].join(" ")}
+                        style={{
+                          maxWidth: `${compactSeatSizePx}px`,
+                          maxHeight: `${compactSeatSizePx}px`,
+                        }}
+                        title={
+                          isCandidate
+                            ? "선택 가능한 남은 좌석"
+                            : isSoldOut
+                              ? "이미 선택된 좌석입니다."
+                              : "선택할 수 없는 좌석"
+                        }
+                        disabled={!isSelectable}
+                        onClick={() => handleSeatClick(seat)}
+                      >
+                        {seat.seatNumber}
+                      </button>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <p className="rounded-md border bg-background px-4 py-6 text-center text-sm text-muted-foreground">
+            선택한 구역에 생성된 가상 좌석이 없습니다.
+          </p>
+        )}
+      </div>
+    );
   }
 
   return (
@@ -2119,6 +2505,7 @@ export function PracticeClient({
                     onChange={(event) =>
                       setCaptchaInput(event.target.value.toUpperCase())
                     }
+                    maxLength={6}
                     placeholder="보안문자 입력"
                   />
                   <Button onClick={handleCaptchaSubmit}>확인</Button>
@@ -2175,6 +2562,10 @@ export function PracticeClient({
                         ? "구역 선택 없이 배치도 위 원형 좌석을 바로 선택합니다."
                         : isYes24SeatSelect
                           ? "미니맵에서 구역 그룹을 선택한 뒤 직사각형 좌석을 선택합니다."
+                          : isMelonSeatSelect
+                            ? seatSelectView === "seat"
+                              ? "선택한 구역의 남아있는 좌석을 선택합니다."
+                              : "배치도 또는 미니맵에서 구역을 선택한 뒤 남아있는 좌석을 선택합니다."
                           : isSplitSeatSelect && seatSelectView === "seat"
                             ? "선택한 구역의 남아있는 좌석을 선택합니다."
                             : "먼저 배치도에서 구역을 선택한 뒤 남아있는 좌석을 선택합니다."}
@@ -2484,102 +2875,90 @@ export function PracticeClient({
                       )}
                     </div>
                   </div>
-                ) : isSplitSeatSelect && seatSelectView === "seat" ? (
-                  <div className="mt-5 rounded-md border bg-secondary p-4">
-                    <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                      <div className="text-sm">
-                        <p className="font-medium">
-                          {selectedZone
-                            ? `${selectedZone.name} · ${selectedZone.grade}`
-                            : "구역 미선택"}
-                        </p>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          남아있는 좌석을 선택하면 연습이 완료됩니다.
-                        </p>
+                ) : isMelonSeatSelect ? (
+                  <div className="mt-5 grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_240px]">
+                    <div className="rounded-md border bg-secondary p-4">
+                      <div className="mb-3 flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
+                        <span>
+                          선택 가능 좌석 {remainingSelectableSeatIds.length}석 /{" "}
+                          후보 {selectableSeatIds.length}석
+                        </span>
+                        {selectedZone ? (
+                          <span>
+                            선택 구역 {selectedZone.name} ·{" "}
+                            {selectedZone.grade}
+                          </span>
+                        ) : null}
                       </div>
+
+                      {seatSelectView === "seat" ? (
+                        renderNolOldSeatGrid({
+                          showResetButton: false,
+                        })
+                      ) : (
+                        <div className="overflow-hidden rounded-md border bg-background">
+                          {renderSeatZoneMap({
+                            alt: "좌석 배치도",
+                            ariaLabel: "멜론 티켓 좌석 구역 선택",
+                            showLabels: false,
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="rounded-md border bg-secondary p-3 xl:max-w-[240px]">
+                      <div className="mb-3 flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                        <span>공연장 미니맵</span>
+                        <span>{selectedZone?.name ?? "전체"}</span>
+                      </div>
+
+                      {zoneOverlays.length > 0 ? (
+                        <div
+                          ref={melonMiniMapScrollRef}
+                          className="max-h-64 cursor-grab overflow-hidden rounded-md border bg-background select-none active:cursor-grabbing"
+                          onWheel={handleMelonMiniMapWheel}
+                          onMouseDown={handleMelonMiniMapMouseDown}
+                          onMouseMove={handleMelonMiniMapMouseMove}
+                          onMouseUp={finishMelonMiniMapDrag}
+                          onMouseLeave={finishMelonMiniMapDrag}
+                        >
+                          <div
+                            className="relative min-w-full"
+                            style={{
+                              width: `${melonMiniMapZoom * 100}%`,
+                            }}
+                          >
+                            {renderSeatZoneMap({
+                              alt: "공연장 미니맵",
+                              ariaLabel: "멜론 티켓 미니맵 구역 선택",
+                              onZoneSelect: handleMelonMiniMapZoneSelect,
+                              showLabels: false,
+                              miniMap: true,
+                            })}
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="rounded-md border bg-background px-4 py-6 text-center text-sm text-muted-foreground">
+                          미니맵에 표시할 구역 좌표가 없습니다.
+                        </p>
+                      )}
+
                       <Button
                         type="button"
                         variant="outline"
                         size="sm"
-                        onClick={() => {
-                          setSeatSelectView("zone");
-                          setSelectedSeatId(null);
-                          setMessage("배치도에서 구역을 다시 선택하세요.");
-                        }}
+                        className="mt-3 w-full"
+                        onClick={handleSeatMapOverview}
                         disabled={isCompleting}
                       >
-                        구역 다시 선택
+                        배치도 전체보기
                       </Button>
                     </div>
-
-                    {!selectedZone ? (
-                      <p className="rounded-md border bg-background px-4 py-6 text-center text-sm text-muted-foreground">
-                        이전 페이지에서 구역을 먼저 선택하세요.
-                      </p>
-                    ) : groupedSeats.length > 0 ? (
-                      <div className="rounded-md border bg-background p-3">
-                        <div className="grid gap-1.5">
-                          {groupedSeats.map((row) => (
-                            <div
-                              key={row.rowLabel}
-                              className="grid items-center gap-1.5"
-                              style={{
-                                gridTemplateColumns: `2.5rem repeat(${maxSeatsPerRow}, minmax(0, 1fr))`,
-                              }}
-                            >
-                              <span className="text-xs text-muted-foreground">
-                                {row.rowLabel}
-                              </span>
-                              {row.seats.map((seat) => {
-                                const isSelected = selectedSeatId === seat.id;
-                                const isCandidate =
-                                  remainingSelectableSeatIdSet.has(seat.id);
-                                const isSoldOut = soldOutSeatIdSet.has(seat.id);
-                                const isSelectable =
-                                  seat.status === "available" && !isCompleting;
-
-                                return (
-                                  <button
-                                    key={seat.id}
-                                    type="button"
-                                    className={[
-                                      "aspect-square rounded-sm border bg-background text-[10px] font-medium transition",
-                                      isSelected
-                                        ? "border-primary bg-primary text-primary-foreground"
-                                        : "",
-                                      !isSelected && isCandidate
-                                        ? "border-emerald-500 bg-emerald-50 text-emerald-900 hover:border-primary"
-                                        : "",
-                                      !isCandidate ? "opacity-35" : "",
-                                    ].join(" ")}
-                                    style={{
-                                      maxWidth: `${compactSeatSizePx}px`,
-                                      maxHeight: `${compactSeatSizePx}px`,
-                                    }}
-                                    title={
-                                      isCandidate
-                                        ? "선택 가능한 남은 좌석"
-                                        : isSoldOut
-                                          ? "이미 선택된 좌석입니다."
-                                          : "선택할 수 없는 좌석"
-                                    }
-                                    disabled={!isSelectable}
-                                    onClick={() => handleSeatClick(seat)}
-                                  >
-                                    {seat.seatNumber}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ) : (
-                      <p className="rounded-md border bg-background px-4 py-6 text-center text-sm text-muted-foreground">
-                        선택한 구역에 생성된 가상 좌석이 없습니다.
-                      </p>
-                    )}
                   </div>
+                ) : isSplitSeatSelect && seatSelectView === "seat" ? (
+                  renderNolOldSeatGrid({
+                    className: "mt-5",
+                  })
                 ) : (
                   <div
                     className={[
