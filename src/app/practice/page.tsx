@@ -10,15 +10,6 @@ import {
   getRegisteredConcertsForUser,
   getRegisteredPracticeConcert,
 } from "@/lib/registered-concerts";
-import {
-  getBboxCenter,
-  getPolygonCenter,
-  getPolygonPointsAttribute,
-  parseBbox,
-  parsePolygon,
-  polygonFromBbox,
-  type Point,
-} from "@/lib/seat-zone-geometry";
 
 type PracticeHubPageProps = {
   searchParams?: Promise<{
@@ -93,16 +84,6 @@ function PracticePreparationState({
 type PracticePreviewSeatMap = {
   imageUrl: string;
   analysisStatus: "pending" | "success" | "failed";
-  zoneCount: number;
-};
-
-type PracticePreviewZone = {
-  id: string;
-  name: string;
-  grade: string;
-  bbox: unknown;
-  polygon: unknown;
-  virtualSeats: unknown[];
 };
 
 function getStatusLabel(status: PracticePreviewSeatMap["analysisStatus"]) {
@@ -117,55 +98,11 @@ function getStatusLabel(status: PracticePreviewSeatMap["analysisStatus"]) {
   return "분석 대기";
 }
 
-function getZonePreviewOverlays(zones: PracticePreviewZone[]) {
-  return zones
-    .map((zone) => {
-      const bbox = parseBbox(zone.bbox);
-      const polygon =
-        parsePolygon(zone.polygon) ?? (bbox ? polygonFromBbox(bbox) : null);
-
-      if (!polygon) {
-        return null;
-      }
-
-      const labelPoint: Point = parsePolygon(zone.polygon)
-        ? getPolygonCenter(polygon)
-        : bbox
-          ? getBboxCenter(bbox)
-          : getPolygonCenter(polygon);
-
-      return {
-        ...zone,
-        polygon,
-        labelPoint,
-      };
-    })
-    .filter(
-      (
-        zone,
-      ): zone is PracticePreviewZone & {
-        polygon: Point[];
-        labelPoint: Point;
-      } => Boolean(zone),
-    );
-}
-
 function RegisteredSeatMapPreview({
   seatMap,
-  zones,
 }: {
   seatMap: PracticePreviewSeatMap | null;
-  zones: PracticePreviewZone[];
 }) {
-  const overlays = getZonePreviewOverlays(zones);
-  const virtualSeatCount = zones.reduce(
-    (total, zone) => total + zone.virtualSeats.length,
-    0,
-  );
-  const coordinateReviewCount = seatMap
-    ? Math.max(seatMap.zoneCount - overlays.length, 0)
-    : 0;
-
   return (
     <section className="rounded-lg border bg-card p-5 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -189,57 +126,8 @@ function RegisteredSeatMapPreview({
                 alt="등록한 좌석 배치도"
                 className="block h-auto w-full"
               />
-              {overlays.length > 0 ? (
-                <>
-                  <svg
-                    className="absolute inset-0 h-full w-full"
-                    viewBox="0 0 100 100"
-                    preserveAspectRatio="none"
-                    aria-hidden="true"
-                  >
-                    {overlays.map((zone) => (
-                      <polygon
-                        key={zone.id}
-                        points={getPolygonPointsAttribute(zone.polygon)}
-                        className="fill-emerald-400/15 stroke-emerald-600"
-                        strokeWidth={0.55}
-                        vectorEffect="non-scaling-stroke"
-                      />
-                    ))}
-                  </svg>
-                  {overlays.map((zone) => (
-                    <span
-                      key={`${zone.id}-label`}
-                      className="absolute max-w-32 -translate-x-1/2 -translate-y-1/2 rounded-md border bg-background/95 px-2 py-1 text-[11px] font-semibold shadow-sm"
-                      style={{
-                        left: `${zone.labelPoint.x * 100}%`,
-                        top: `${zone.labelPoint.y * 100}%`,
-                      }}
-                    >
-                      <span className="block truncate">{zone.name}</span>
-                      <span className="block truncate text-muted-foreground">
-                        {zone.grade}
-                      </span>
-                    </span>
-                  ))}
-                </>
-              ) : null}
             </div>
           </div>
-
-          <div className="mt-4 grid gap-2 text-sm text-muted-foreground sm:grid-cols-2">
-            <p className="rounded-md border bg-secondary px-3 py-2">
-              구역 {seatMap.zoneCount}개
-            </p>
-            <p className="rounded-md border bg-secondary px-3 py-2">
-              가상 좌석 {virtualSeatCount}석
-            </p>
-          </div>
-          {coordinateReviewCount > 0 ? (
-            <p className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-              좌표 확인 필요 {coordinateReviewCount}개
-            </p>
-          ) : null}
         </>
       ) : (
         <div className="mt-5 rounded-lg border bg-secondary px-5 py-12 text-center text-sm text-muted-foreground">
@@ -298,7 +186,6 @@ export default async function PracticeHubPage({
         <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_400px]">
           <RegisteredSeatMapPreview
             seatMap={selectedConcertSummary.latestSeatMap}
-            zones={zones}
           />
           <div className="xl:sticky xl:top-28">
             {selectedConcert && latestSeatMap && hasZones && hasVirtualSeats ? (
