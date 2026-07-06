@@ -47,9 +47,64 @@ describe("kopis concert provider", () => {
       bookingUrl: "https://tickets.example.com",
       posterImageUrl: "https://kopis.or.kr/upload/pfmPoster/PF_TEST.gif",
     });
+    expect(concert?.schedules).toHaveLength(2);
+    expect(concert?.schedules[0]).toMatchObject({
+      roundName: "1일차",
+      startTime: "19:00",
+    });
+    expect(concert?.schedules[1]).toMatchObject({
+      roundName: "2일차",
+      startTime: "19:00",
+    });
+    expect(concert?.schedules.map((schedule) => schedule.performanceDate.toISOString())).toEqual([
+      "2026-08-14T15:00:00.000Z",
+      "2026-08-15T15:00:00.000Z",
+    ]);
+  });
+
+  it("creates daily practice schedules for short multi-day KOPIS periods", () => {
+    const concert = normalizeKopisConcert({
+      listRecord: {
+        mt20id: "PF_DAILY",
+        prfnm: "DAILY TEST LIVE",
+        prfpdfrom: "2026.07.08",
+        prfpdto: "2026.07.12",
+        fcltynm: "KSPO DOME",
+      },
+    });
+
+    expect(concert?.schedules).toHaveLength(5);
+    expect(concert?.schedules.map((schedule) => schedule.roundName)).toEqual([
+      "1일차",
+      "2일차",
+      "3일차",
+      "4일차",
+      "5일차",
+    ]);
+    expect(concert?.schedules.map((schedule) => schedule.performanceDate.toISOString())).toEqual([
+      "2026-07-07T15:00:00.000Z",
+      "2026-07-08T15:00:00.000Z",
+      "2026-07-09T15:00:00.000Z",
+      "2026-07-10T15:00:00.000Z",
+      "2026-07-11T15:00:00.000Z",
+    ]);
+  });
+
+  it("keeps long KOPIS periods as one range schedule", () => {
+    const concert = normalizeKopisConcert({
+      listRecord: {
+        mt20id: "PF_LONG",
+        prfnm: "LONG RUN TEST",
+        prfpdfrom: "2026.07.01",
+        prfpdto: "2026.09.15",
+        fcltynm: "테스트 극장",
+      },
+    });
+
+    expect(concert?.schedules).toHaveLength(1);
     expect(concert?.schedules[0]).toMatchObject({
       roundName: "공연 기간",
-      startTime: "19:00",
+      startTime: "시간 미정",
     });
   });
 
@@ -70,6 +125,17 @@ describe("kopis concert provider", () => {
           mt20id: "PF123456",
           prfnm: "BROKEN",
           prfpdfrom: "invalid",
+          prfpdto: "2026.08.16",
+        },
+      }),
+    ).toBeNull();
+
+    expect(
+      normalizeKopisConcert({
+        listRecord: {
+          mt20id: "PF123456",
+          prfnm: "BROKEN",
+          prfpdfrom: "2026.08.17",
           prfpdto: "2026.08.16",
         },
       }),

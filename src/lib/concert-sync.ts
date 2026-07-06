@@ -41,6 +41,10 @@ function getSyncDateRange(monthsAhead: number) {
   };
 }
 
+function getScheduleDateKey(date: Date) {
+  return date.getTime().toString();
+}
+
 async function upsertExternalConcert(concert: ExternalConcertInput) {
   const syncedAt = new Date();
 
@@ -101,10 +105,8 @@ async function upsertExternalConcert(concert: ExternalConcertInput) {
       },
     });
 
-    const primarySchedule = concert.schedules[0];
-
-    if (primarySchedule) {
-      const existingSchedule = await tx.concertSchedule.findFirst({
+    if (concert.schedules.length > 0) {
+      const existingSchedules = await tx.concertSchedule.findMany({
         where: {
           concertId: upsertedConcert.id,
         },
@@ -113,27 +115,62 @@ async function upsertExternalConcert(concert: ExternalConcertInput) {
         },
         select: {
           id: true,
+          performanceDate: true,
         },
       });
 
-      if (existingSchedule) {
-        await tx.concertSchedule.update({
+      const existingSchedulesByDate = new Map(
+        existingSchedules.map((schedule) => [
+          getScheduleDateKey(schedule.performanceDate),
+          schedule,
+        ]),
+      );
+      const keptScheduleIds = new Set<string>();
+
+      for (const schedule of concert.schedules) {
+        const existingSchedule = existingSchedulesByDate.get(
+          getScheduleDateKey(schedule.performanceDate),
+        );
+
+        if (existingSchedule && !keptScheduleIds.has(existingSchedule.id)) {
+          await tx.concertSchedule.update({
+            where: {
+              id: existingSchedule.id,
+            },
+            data: {
+              performanceDate: schedule.performanceDate,
+              roundName: schedule.roundName,
+              startTime: schedule.startTime,
+            },
+          });
+          keptScheduleIds.add(existingSchedule.id);
+        } else {
+          const createdSchedule = await tx.concertSchedule.create({
+            data: {
+              concertId: upsertedConcert.id,
+              performanceDate: schedule.performanceDate,
+              roundName: schedule.roundName,
+              startTime: schedule.startTime,
+            },
+            select: {
+              id: true,
+            },
+          });
+          keptScheduleIds.add(createdSchedule.id);
+        }
+      }
+
+      const staleScheduleIds = existingSchedules
+        .filter((schedule) => !keptScheduleIds.has(schedule.id))
+        .map((schedule) => schedule.id);
+
+      if (staleScheduleIds.length > 0) {
+        await tx.concertSchedule.deleteMany({
           where: {
-            id: existingSchedule.id,
-          },
-          data: {
-            performanceDate: primarySchedule.performanceDate,
-            roundName: primarySchedule.roundName,
-            startTime: primarySchedule.startTime,
-          },
-        });
-      } else {
-        await tx.concertSchedule.create({
-          data: {
             concertId: upsertedConcert.id,
-            performanceDate: primarySchedule.performanceDate,
-            roundName: primarySchedule.roundName,
-            startTime: primarySchedule.startTime,
+            id: {
+              in: staleScheduleIds,
+            },
           },
         });
       }

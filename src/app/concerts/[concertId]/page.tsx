@@ -107,6 +107,9 @@ export default async function ConcertDetailPage({
   const isSeatMapAnalyzed =
     concert.latestSeatMap?.analysisStatus === "success" &&
     concert.latestSeatMap.zoneCount > 0;
+  const concertDateRange = formatDateRange(concert.startDate, concert.endDate);
+  const shouldShowScheduleRangeFallback =
+    concert.schedules.length <= 1 && concertDateRange.includes(" - ");
   const infoRows = [
     {
       label: "공연소개",
@@ -114,7 +117,7 @@ export default async function ConcertDetailPage({
     },
     {
       label: "공연일정",
-      value: formatDateRange(concert.startDate, concert.endDate),
+      value: concertDateRange,
     },
     {
       label: "공연장",
@@ -225,15 +228,26 @@ export default async function ConcertDetailPage({
 
           <section className="mt-10 rounded-lg border bg-card p-5 shadow-sm">
             <h2 className="text-lg font-black">공연 일정</h2>
+            {shouldShowScheduleRangeFallback ? (
+              <p className="mt-2 text-sm text-muted-foreground">
+                공연 기간: {concertDateRange}
+              </p>
+            ) : null}
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              {concert.schedules.map((schedule) => (
-                <div key={schedule.id} className="rounded-md border bg-secondary/60 p-4">
-                  <p className="font-bold">{schedule.roundName}</p>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {formatDateTime(schedule.performanceDate)}
-                  </p>
+              {concert.schedules.length > 0 ? (
+                concert.schedules.map((schedule) => (
+                  <div key={schedule.id} className="rounded-md border bg-secondary/60 p-4">
+                    <p className="font-bold">{schedule.roundName}</p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {formatDateTime(schedule.performanceDate)}
+                    </p>
+                  </div>
+                ))
+              ) : (
+                <div className="rounded-md border bg-secondary/60 p-4 text-sm text-muted-foreground">
+                  등록된 회차 일정이 없습니다.
                 </div>
-              ))}
+              )}
             </div>
           </section>
         </div>
