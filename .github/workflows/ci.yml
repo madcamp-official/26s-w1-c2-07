@@ -78,14 +78,11 @@ jobs:
       - name: Deploy Prisma migrations
         run: pnpm prisma:deploy
 
-      - name: Install Vercel CLI
-        run: npm install --global vercel@latest
-
       - name: Pull Vercel production environment
-        run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+        run: pnpm exec vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
 
       - name: Build Vercel production output
-        run: vercel build --prod --token="$VERCEL_TOKEN"
+        run: pnpm exec vercel build --prod --token="$VERCEL_TOKEN"
 
       - name: Deploy to Vercel production
-        run: vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
+        run: pnpm exec vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"

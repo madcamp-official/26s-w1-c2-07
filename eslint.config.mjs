@@ -7,12 +7,13 @@ const eslintConfig = [
   {
     ignores: [
       ".next/**",
+      ".vercel/**",
       ".tools/**",
       "node_modules/**",
       "out/**",
       "dist/**",
       "coverage/**",
-      "next-env.d.ts"
+      "next-env.d.ts",
     ],
   },
 ];
