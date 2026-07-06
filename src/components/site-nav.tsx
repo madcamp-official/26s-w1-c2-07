@@ -20,14 +20,20 @@ const navItems = [
       !pathname.includes("/reviews"),
   },
   {
-    href: "/concerts",
+    href: "/practice",
     label: "티켓팅 연습",
-    isActive: (pathname: string) => pathname.includes("/practice"),
+    isActive: (pathname: string) =>
+      pathname === "/practice" ||
+      pathname.startsWith("/practice/") ||
+      pathname.includes("/practice"),
   },
   {
-    href: "/concerts",
+    href: "/reviews",
     label: "좌석 리뷰",
-    isActive: (pathname: string) => pathname.includes("/reviews"),
+    isActive: (pathname: string) =>
+      pathname === "/reviews" ||
+      pathname.startsWith("/reviews/") ||
+      pathname.includes("/reviews"),
   },
   {
     href: "/my",
