@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ImageUp, Ticket } from "lucide-react";
 
-import { PracticeClient } from "@/app/concerts/[concertId]/practice/practice-client";
+import { PracticeWorkspaceClient } from "@/app/practice/practice-workspace-client";
 import { RegisteredConcertWorkspace } from "@/components/registered-concert-workspace";
 import { Button } from "@/components/ui/button";
 import { getCurrentUser } from "@/lib/auth";
@@ -183,63 +183,64 @@ export default async function PracticeHubPage({
       emptyDescription="공연을 선택하고 좌석 배치도를 등록하면 티켓팅 연습을 시작할 수 있습니다."
     >
       {selectedConcertSummary ? (
-        <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_400px]">
-          <RegisteredSeatMapPreview
-            seatMap={selectedConcertSummary.latestSeatMap}
+        selectedConcert && latestSeatMap && hasZones && hasVirtualSeats ? (
+          <PracticeWorkspaceClient
+            concert={{
+              id: selectedConcert.id,
+              title: selectedConcert.title,
+              artist: selectedConcert.artist,
+              venueName: selectedConcert.venueName,
+              region: selectedConcert.region,
+              priceMin: selectedConcert.priceMin,
+              priceMax: selectedConcert.priceMax,
+            }}
+            schedules={selectedConcert.schedules.map((schedule) => ({
+              id: schedule.id,
+              performanceDate: schedule.performanceDate.toISOString(),
+              roundName: schedule.roundName,
+              startTime: schedule.startTime,
+            }))}
+            seatMap={{
+              id: latestSeatMap.id,
+              imageUrl: latestSeatMap.imageUrl,
+              imageWidth: latestSeatMap.imageWidth,
+              imageHeight: latestSeatMap.imageHeight,
+              analysisStatus:
+                selectedConcertSummary.latestSeatMap.analysisStatus,
+            }}
+            zones={zones.map((zone) => ({
+              id: zone.id,
+              name: zone.name,
+              grade: zone.grade,
+              price: zone.price,
+              bbox: zone.bbox,
+              polygon: zone.polygon,
+              virtualSeats: zone.virtualSeats.map((seat) => ({
+                id: seat.id,
+                rowLabel: seat.rowLabel,
+                seatNumber: seat.seatNumber,
+                status: seat.status,
+                zoneId: zone.id,
+                x: seat.x,
+                y: seat.y,
+              })),
+            }))}
           />
-          <div className="xl:sticky xl:top-28">
-            {selectedConcert && latestSeatMap && hasZones && hasVirtualSeats ? (
-              <PracticeClient
-                layout="panel"
-                concert={{
-                  id: selectedConcert.id,
-                  title: selectedConcert.title,
-                  artist: selectedConcert.artist,
-                  venueName: selectedConcert.venueName,
-                  region: selectedConcert.region,
-                  priceMin: selectedConcert.priceMin,
-                  priceMax: selectedConcert.priceMax,
-                }}
-                schedules={selectedConcert.schedules.map((schedule) => ({
-                  id: schedule.id,
-                  performanceDate: schedule.performanceDate.toISOString(),
-                  roundName: schedule.roundName,
-                  startTime: schedule.startTime,
-                }))}
-                seatMap={{
-                  id: latestSeatMap.id,
-                  imageUrl: latestSeatMap.imageUrl,
-                  imageWidth: latestSeatMap.imageWidth,
-                  imageHeight: latestSeatMap.imageHeight,
-                }}
-                zones={zones.map((zone) => ({
-                  id: zone.id,
-                  name: zone.name,
-                  grade: zone.grade,
-                  price: zone.price,
-                  bbox: zone.bbox,
-                  polygon: zone.polygon,
-                  virtualSeats: zone.virtualSeats.map((seat) => ({
-                    id: seat.id,
-                    rowLabel: seat.rowLabel,
-                    seatNumber: seat.seatNumber,
-                    status: seat.status,
-                    zoneId: zone.id,
-                    x: seat.x,
-                    y: seat.y,
-                  })),
-                }))}
-              />
-            ) : (
+        ) : (
+          <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_400px]">
+            <RegisteredSeatMapPreview
+              seatMap={selectedConcertSummary.latestSeatMap}
+            />
+            <div className="xl:sticky xl:top-28">
               <PracticePreparationState
                 concertId={selectedConcertSummary.id}
                 hasSeatMap={Boolean(selectedConcertSummary.latestSeatMap)}
                 hasZones={Boolean(latestSeatMap && hasZones)}
                 hasVirtualSeats={hasVirtualSeats}
               />
-            )}
+            </div>
           </div>
-        </div>
+        )
       ) : null}
     </RegisteredConcertWorkspace>
   );

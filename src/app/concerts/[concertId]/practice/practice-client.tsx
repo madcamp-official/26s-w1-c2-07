@@ -153,9 +153,10 @@ type PracticeClientProps = {
   };
   zones: SeatZoneSummary[];
   layout?: "default" | "panel";
+  onPhaseChange?: (phase: PracticePhase) => void;
 };
 
-type PracticePhase = "setup" | "countdown" | "running" | "result";
+export type PracticePhase = "setup" | "countdown" | "running" | "result";
 
 type PracticeSessionResponse = {
   data?: {
@@ -1042,6 +1043,7 @@ export function PracticeClient({
   seatMap,
   zones,
   layout = "default",
+  onPhaseChange,
 }: PracticeClientProps) {
   const isPanelLayout = layout === "panel";
   const [phase, setPhase] = useState<PracticePhase>("setup");
@@ -1103,6 +1105,10 @@ export function PracticeClient({
     hasMoved: boolean;
   } | null>(null);
   const suppressMelonMiniMapClickRef = useRef(false);
+
+  useEffect(() => {
+    onPhaseChange?.(phase);
+  }, [onPhaseChange, phase]);
 
   const steps = PRACTICE_TEMPLATE_STEPS[templateType];
   const currentStep = phase === "running" ? steps[currentStepIndex] : null;
@@ -2528,6 +2534,12 @@ export function PracticeClient({
                     onChange={(event) =>
                       setCaptchaInput(event.target.value.toUpperCase())
                     }
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        handleCaptchaSubmit();
+                      }
+                    }}
                     maxLength={6}
                     placeholder="보안문자 입력"
                   />
