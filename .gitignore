@@ -16,3 +16,5 @@ test-results
 *.log
 .DS_Store
 pnpm-debug.log*
+
+화면설계서/
