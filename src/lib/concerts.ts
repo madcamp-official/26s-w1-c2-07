@@ -9,6 +9,11 @@ type ConcertListOptions = {
   q?: string;
   region?: string;
   genre?: string;
+  seatMapOwnerId?: string | null;
+};
+
+type ConcertDetailOptions = {
+  seatMapOwnerId?: string | null;
 };
 
 function getTodayKstStart() {
@@ -134,18 +139,36 @@ function getConcertWhere(options: ConcertListOptions = {}) {
   } satisfies Prisma.ConcertWhereInput;
 }
 
+function getSeatMapOwnerWhere(
+  userId: string | null | undefined,
+): Prisma.SeatMapWhereInput {
+  if (userId) {
+    return {
+      createdBy: userId,
+    };
+  }
+
+  return {
+    id: "00000000-0000-0000-0000-000000000000",
+  };
+}
+
 export async function getConcertList(options: ConcertListOptions = {}) {
   const scope = options.scope ?? "upcoming";
+  const seatMapWhere = getSeatMapOwnerWhere(options.seatMapOwnerId);
   const concerts = await prisma.concert.findMany({
     where: getConcertWhere(options),
     include: {
       _count: {
         select: {
-          seatMaps: true,
+          seatMaps: {
+            where: seatMapWhere,
+          },
           reviews: true,
         },
       },
       seatMaps: {
+        where: seatMapWhere,
         select: {
           id: true,
           analysisStatus: true,
@@ -233,7 +256,11 @@ export async function getConcertFilterOptions(options: ConcertListOptions = {}) 
   };
 }
 
-export async function getConcertDetail(concertId: string) {
+export async function getConcertDetail(
+  concertId: string,
+  options: ConcertDetailOptions = {},
+) {
+  const seatMapWhere = getSeatMapOwnerWhere(options.seatMapOwnerId);
   const concert = await prisma.concert.findFirst({
     where: {
       id: concertId,
@@ -251,6 +278,7 @@ export async function getConcertDetail(concertId: string) {
         ],
       },
       seatMaps: {
+        where: seatMapWhere,
         include: {
           _count: {
             select: {
@@ -265,7 +293,9 @@ export async function getConcertDetail(concertId: string) {
       },
       _count: {
         select: {
-          seatMaps: true,
+          seatMaps: {
+            where: seatMapWhere,
+          },
           reviews: true,
           practiceSessions: true,
         },

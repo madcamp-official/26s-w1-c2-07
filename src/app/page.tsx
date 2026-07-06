@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { getCurrentUser } from "@/lib/auth";
 import { getConcertList } from "@/lib/concerts";
 import { prisma } from "@/lib/prisma";
 import { formatDateRange } from "@/utils/format";
@@ -29,6 +30,7 @@ async function getRecentReviews() {
       zone: {
         select: {
           name: true,
+          grade: true,
         },
       },
     },
@@ -39,13 +41,35 @@ async function getRecentReviews() {
   });
 }
 
+function formatReviewSeat(review: Awaited<ReturnType<typeof getRecentReviews>>[number]) {
+  if (
+    review.seatFloor &&
+    review.seatSection &&
+    review.seatRow &&
+    review.seatNumber
+  ) {
+    const floorLabel =
+      review.seatFloor === "floor" ? "floor층" : `${review.seatFloor}층`;
+
+    return `${floorLabel} · ${review.seatSection}구역`;
+  }
+
+  if (review.zone) {
+    return `${review.zone.name} 후기`;
+  }
+
+  return "좌석 리뷰";
+}
+
 export default async function Home() {
-  const [concerts, recentReviews] = await Promise.all([
-    getConcertList({
-      scope: "upcoming",
-    }),
+  const [user, recentReviews] = await Promise.all([
+    getCurrentUser(),
     getRecentReviews(),
   ]);
+  const concerts = await getConcertList({
+    scope: "upcoming",
+    seatMapOwnerId: user?.id ?? null,
+  });
   const featuredConcerts = concerts.slice(0, 4);
 
   return (
@@ -215,7 +239,7 @@ export default async function Home() {
                 >
                   <div className="min-w-0">
                     <p className="truncate font-semibold">
-                      {review.zone.name} 후기
+                      {formatReviewSeat(review)}
                     </p>
                     <p className="mt-1 truncate text-xs text-muted-foreground">
                       {review.concert.title}

@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { getCurrentUser } from "@/lib/auth";
 import { getConcertDetail } from "@/lib/concerts";
 import { formatDateRange, formatPriceRange } from "@/utils/format";
 
@@ -91,7 +92,10 @@ export default async function ConcertDetailPage({
     notFound();
   }
 
-  const concert = await getConcertDetail(parsedConcertId.data);
+  const user = await getCurrentUser();
+  const concert = await getConcertDetail(parsedConcertId.data, {
+    seatMapOwnerId: user?.id ?? null,
+  });
 
   if (!concert) {
     notFound();

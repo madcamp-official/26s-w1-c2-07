@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { getSafeStorageFileName } from "@/lib/seat-map-upload";
 
 export const REVIEW_IMAGE_BUCKET = "review-images";
+export const REVIEW_IMAGE_MAX_FILE_COUNT = 5;
 export const REVIEW_IMAGE_MAX_FILE_SIZE = 5 * 1024 * 1024;
 export const REVIEW_IMAGE_ALLOWED_TYPES = ["image/png", "image/jpeg"];
 

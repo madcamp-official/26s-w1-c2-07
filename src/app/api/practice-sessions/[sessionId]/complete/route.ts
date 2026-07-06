@@ -38,6 +38,7 @@ async function validateSchedule(input: {
 
 async function validateZoneAndSeat(input: {
   concertId: string;
+  userId: string;
   selectedZoneId: string | null | undefined;
   selectedSeatId: string | null | undefined;
 }) {
@@ -57,6 +58,7 @@ async function validateZoneAndSeat(input: {
       zone: {
         seatMap: {
           concertId: input.concertId,
+          createdBy: input.userId,
         },
       },
     },
@@ -117,6 +119,7 @@ export async function PATCH(
 
   const isValidSeat = await validateZoneAndSeat({
     concertId: practiceSession.concertId,
+    userId: user.id,
     selectedZoneId: parsedBody.data.selectedZoneId,
     selectedSeatId: parsedBody.data.selectedSeatId,
   });

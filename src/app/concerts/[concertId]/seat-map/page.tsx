@@ -75,7 +75,7 @@ export default async function SeatMapPage({ params }: SeatMapPageProps) {
     redirect(`/login?redirect=/concerts/${concert.id}/seat-map`);
   }
 
-  const latestSeatMap = await getLatestSeatMapForConcert(concert.id);
+  const latestSeatMap = await getLatestSeatMapForConcert(concert.id, user.id);
   const hasSeatMap = Boolean(latestSeatMap);
   const analysisDone = latestSeatMap?.analysisStatus === "success";
 

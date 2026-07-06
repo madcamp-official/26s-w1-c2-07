@@ -90,6 +90,7 @@ async function getSeatZoneForReview(zoneId: string) {
       seatMap: {
         select: {
           concertId: true,
+          createdBy: true,
           concert: {
             select: {
               id: true,
@@ -107,6 +108,12 @@ export async function GET(
   _request: Request,
   { params }: SeatZoneReviewsRouteContext,
 ) {
+  const auth = await getCurrentUserWithProfile();
+
+  if (!auth) {
+    return apiError("로그인이 필요합니다.", 401);
+  }
+
   const parsedParams = seatZoneParamsSchema.safeParse(await params);
 
   if (!parsedParams.success) {
@@ -115,7 +122,7 @@ export async function GET(
 
   const seatZone = await getSeatZoneForReview(parsedParams.data.zoneId);
 
-  if (!seatZone) {
+  if (!seatZone || seatZone.seatMap.createdBy !== auth.user.id) {
     return apiError("좌석 구역을 찾을 수 없습니다.", 404);
   }
 
@@ -228,7 +235,7 @@ export async function POST(
 
   const seatZone = await getSeatZoneForReview(parsedParams.data.zoneId);
 
-  if (!seatZone) {
+  if (!seatZone || seatZone.seatMap.createdBy !== auth.user.id) {
     return apiError("좌석 구역을 찾을 수 없습니다.", 404);
   }
 
@@ -294,6 +301,7 @@ export async function POST(
         satisfactionScore: parsedBody.data.satisfactionScore,
         content: parsedBody.data.content,
         imageUrl: uploadedImageUrl,
+        imageUrls: uploadedImageUrl ? [uploadedImageUrl] : [],
       },
       include: {
         user: {

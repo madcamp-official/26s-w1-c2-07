@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import { prisma } from "@/lib/prisma";
 import { apiData, apiError } from "@/lib/api";
-import { getCurrentUserWithProfile } from "@/lib/auth";
+import { getCurrentUser, getCurrentUserWithProfile } from "@/lib/auth";
 import { virtualSeatGenerateSchema } from "@/lib/validators";
 import {
   generateVirtualSeats,
@@ -47,6 +47,12 @@ export async function GET(
   _request: Request,
   { params }: VirtualSeatsRouteContext,
 ) {
+  const user = await getCurrentUser();
+
+  if (!user) {
+    return apiError("로그인이 필요합니다.", 401);
+  }
+
   const parsedParams = seatZoneParamsSchema.safeParse(await params);
 
   if (!parsedParams.success) {
@@ -63,6 +69,11 @@ export async function GET(
       grade: true,
       price: true,
       virtualSeatConfig: true,
+      seatMap: {
+        select: {
+          createdBy: true,
+        },
+      },
       virtualSeats: {
         select: {
           id: true,
@@ -76,7 +87,7 @@ export async function GET(
     },
   });
 
-  if (!seatZone) {
+  if (!seatZone || seatZone.seatMap.createdBy !== user.id) {
     return apiError("좌석 구역을 찾을 수 없습니다.", 404);
   }
 

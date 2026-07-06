@@ -49,13 +49,18 @@ type MyReview = {
     id: string;
     name: string;
     grade: string;
-  };
+  } | null;
+  seatFloor: string | null;
+  seatSection: string | null;
+  seatRow: string | null;
+  seatNumber: string | null;
   viewScore: number;
   soundScore: number;
   distanceScore: number;
   satisfactionScore: number;
   content: string;
   imageUrl: string | null;
+  imageUrls: string[];
   createdAt: string;
   updatedAt: string;
 };
@@ -161,6 +166,34 @@ function formatDateTime(value: string) {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));
+}
+
+function formatReviewSeat(review: MyReview) {
+  if (
+    review.seatFloor &&
+    review.seatSection &&
+    review.seatRow &&
+    review.seatNumber
+  ) {
+    const floorLabel =
+      review.seatFloor === "floor" ? "floor층" : `${review.seatFloor}층`;
+
+    return `${floorLabel} · ${review.seatSection}구역 · ${review.seatRow}행 · ${review.seatNumber}열`;
+  }
+
+  if (review.zone) {
+    return `${review.zone.name} · ${review.zone.grade}`;
+  }
+
+  return "좌석 정보 미입력";
+}
+
+function getReviewImageUrls(review: MyReview) {
+  return review.imageUrls.length > 0
+    ? review.imageUrls
+    : review.imageUrl
+      ? [review.imageUrl]
+      : [];
 }
 
 function formatElapsed(milliseconds: number) {
@@ -465,8 +498,7 @@ function ReviewList({
               <div className="min-w-0">
                 <p className="font-medium">{review.concert.title}</p>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  {review.concert.venueName} · {review.zone.name} ·{" "}
-                  {review.zone.grade}
+                  {review.concert.venueName} · {formatReviewSeat(review)}
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {formatDateTime(review.createdAt)}
@@ -515,14 +547,21 @@ function ReviewList({
               {review.content}
             </p>
 
-            {review.imageUrl ? (
-              <div className="mt-4 overflow-hidden rounded-md border bg-secondary">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={review.imageUrl}
-                  alt="리뷰 시야 사진"
-                  className="max-h-64 w-full object-contain"
-                />
+            {getReviewImageUrls(review).length > 0 ? (
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                {getReviewImageUrls(review).map((imageUrl, imageIndex) => (
+                  <div
+                    key={imageUrl}
+                    className="overflow-hidden rounded-md border bg-secondary"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={imageUrl}
+                      alt={`리뷰 시야 사진 ${imageIndex + 1}`}
+                      className="aspect-square w-full object-cover"
+                    />
+                  </div>
+                ))}
               </div>
             ) : null}
           </article>

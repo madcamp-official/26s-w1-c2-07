@@ -27,6 +27,42 @@ export const reviewCreateSchema = reviewBaseSchema;
 
 export const reviewUpdateSchema = reviewBaseSchema;
 
+export const REVIEW_SEAT_FLOORS = [
+  "floor",
+  "1",
+  "2",
+  "3",
+  "4",
+  "5",
+  "6",
+  "7",
+  "8",
+  "9",
+  "10",
+] as const;
+
+export const reviewManualCreateSchema = reviewBaseSchema
+  .extend({
+    seatFloor: z.enum(REVIEW_SEAT_FLOORS),
+    seatSection: z.string().trim().min(1).max(30),
+    seatRow: z.string().trim().min(1).max(20),
+    seatNumber: z.string().trim().min(1).max(20),
+  })
+  .superRefine((value, context) => {
+    const sectionPrefix = value.seatFloor === "floor" ? "f" : value.seatFloor;
+
+    if (!value.seatSection.toLowerCase().startsWith(sectionPrefix)) {
+      context.addIssue({
+        code: "custom",
+        path: ["seatSection"],
+        message:
+          value.seatFloor === "floor"
+            ? "floor층 구역은 f로 시작해야 합니다."
+            : `${value.seatFloor}층 구역은 ${value.seatFloor}로 시작해야 합니다.`,
+      });
+    }
+  });
+
 export const seatZoneSchema = z.object({
   name: z.string().min(1),
   grade: z.string().min(1),

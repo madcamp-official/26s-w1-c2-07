@@ -60,6 +60,7 @@ export default async function PracticePage({ params }: PracticePageProps) {
       },
       seatMaps: {
         where: {
+          createdBy: user.id,
           analysisStatus: "success",
         },
         orderBy: {

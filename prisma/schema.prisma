@@ -156,19 +156,24 @@ model Review {
   id                String   @id @default(uuid()) @db.Uuid
   userId            String   @db.Uuid
   concertId         String   @db.Uuid
-  zoneId            String   @db.Uuid
+  zoneId            String?  @db.Uuid
+  seatFloor         String?
+  seatSection       String?
+  seatRow           String?
+  seatNumber        String?
   viewScore         Int
   soundScore        Int
   distanceScore     Int
   satisfactionScore Int
   content           String
   imageUrl          String?
+  imageUrls         String[] @default([])
   likeCount         Int      @default(0)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
   user              Profile  @relation(fields: [userId], references: [id], onDelete: Cascade)
   concert           Concert  @relation(fields: [concertId], references: [id], onDelete: Cascade)
-  zone              SeatZone @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  zone              SeatZone? @relation(fields: [zoneId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([concertId])

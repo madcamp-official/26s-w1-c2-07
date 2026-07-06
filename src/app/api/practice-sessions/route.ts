@@ -25,6 +25,7 @@ export async function POST(request: Request) {
       id: true,
       seatMaps: {
         where: {
+          createdBy: auth.user.id,
           analysisStatus: "success",
         },
         select: {
