@@ -57,6 +57,7 @@
     "prisma": "^6.19.3",
     "tailwindcss": "^4.3.2",
     "typescript": "^6.0.3",
+    "vercel": "^54.20.1",
     "vitest": "^4.1.9"
   }
 }
