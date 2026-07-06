@@ -12,6 +12,8 @@ const DEFAULT_KOPIS_BASE_URL = "https://www.kopis.or.kr/openApi/restful";
 const KST_TIME_ZONE = "Asia/Seoul";
 const FALLBACK_ARTIST = "출연진 미정";
 const FALLBACK_START_TIME = "시간 미정";
+const MAX_DAILY_SCHEDULE_DAYS = 31;
+const DAY_IN_MS = 24 * 60 * 60 * 1000;
 
 type KopisRawRecord = Record<string, unknown>;
 
@@ -157,6 +159,50 @@ function parseStartTime(value: string) {
   return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 
+function createKopisScheduleDates(startDate: Date, endDate: Date) {
+  const startDateKey = formatKopisDate(startDate);
+  const endDateKey = formatKopisDate(endDate);
+
+  if (endDateKey < startDateKey) {
+    return [];
+  }
+
+  const dates: Date[] = [];
+  let currentDate = parseKopisDate(startDateKey);
+
+  while (currentDate && formatKopisDate(currentDate) <= endDateKey) {
+    dates.push(new Date(currentDate));
+
+    if (dates.length > MAX_DAILY_SCHEDULE_DAYS) {
+      return [];
+    }
+
+    currentDate = new Date(currentDate.getTime() + DAY_IN_MS);
+  }
+
+  return dates;
+}
+
+function createKopisSchedules(startDate: Date, endDate: Date, startTime: string) {
+  const dates = createKopisScheduleDates(startDate, endDate);
+
+  if (dates.length === 0) {
+    return [
+      {
+        performanceDate: startDate,
+        roundName: "공연 기간",
+        startTime,
+      },
+    ];
+  }
+
+  return dates.map((performanceDate, index) => ({
+    performanceDate,
+    roundName: dates.length === 1 ? "공연일" : `${index + 1}일차`,
+    startTime,
+  }));
+}
+
 function getBookingUrl(record: KopisRawRecord) {
   const related = record.relates;
 
@@ -259,13 +305,18 @@ export function normalizeKopisConcert(input: {
   const startDate = parseKopisDate(getString(record, "prfpdfrom"));
   const endDate = parseKopisDate(getString(record, "prfpdto"), true);
 
-  if (!externalId || !startDate || !endDate) {
+  if (
+    !externalId ||
+    !startDate ||
+    !endDate ||
+    formatKopisDate(endDate) < formatKopisDate(startDate)
+  ) {
     return null;
   }
 
   const priceRange = parsePriceRange(getString(record, "pcseguidance"));
   const startTime = parseStartTime(getString(record, "dtguidance"));
-  const isSingleDay = formatKopisDate(startDate) === formatKopisDate(endDate);
+  const schedules = createKopisSchedules(startDate, endDate, startTime);
 
   return {
     externalSource: KOPIS_SOURCE,
@@ -290,13 +341,7 @@ export function normalizeKopisConcert(input: {
       list: input.listRecord,
       detail: input.detailRecord ?? null,
     }),
-    schedules: [
-      {
-        performanceDate: startDate,
-        roundName: isSingleDay ? "공연일" : "공연 기간",
-        startTime,
-      },
-    ],
+    schedules,
   } satisfies ExternalConcertInput;
 }
 
