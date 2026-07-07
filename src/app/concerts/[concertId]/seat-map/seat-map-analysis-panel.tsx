@@ -1028,8 +1028,11 @@ export function SeatMapAnalysisPanel({
             ) : null}
           </div>
 
-          <div className="mt-4 grid gap-2 sm:grid-cols-2">
-            <Button type="submit" disabled={!selectedZone || isMutating}>
+          <div className="mt-4 grid gap-2 sm:grid-cols-3">
+            <Button
+              type="submit"
+              disabled={!selectedZone || isMutating || isCreatingZone}
+            >
               {isMutating ? (
                 <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
               ) : (
@@ -1040,11 +1043,26 @@ export function SeatMapAnalysisPanel({
             <Button
               type="button"
               variant="outline"
-              onClick={handleDelete}
-              disabled={!selectedZone || isMutating}
+              onClick={() => {
+                void handleCreateZone();
+              }}
+              disabled={isCreatingZone || isMutating || isGeneratingSeats}
             >
-              <Trash2 className="h-4 w-4" aria-hidden="true" />
-              삭제
+              {isCreatingZone ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Plus className="h-4 w-4 shrink-0" aria-hidden="true" />
+              )}
+              구역 추가
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleDelete}
+              disabled={!selectedZone || isMutating || isCreatingZone}
+            >
+              <Trash2 className="h-4 w-4 shrink-0" aria-hidden="true" />
+              구역 삭제
             </Button>
           </div>
         </form>
@@ -1089,31 +1107,13 @@ export function SeatMapAnalysisPanel({
               ? "AI 좌석 구역 분석 중"
               : getAnalyzeButtonText(seatMap.analysisStatus)}
           </Button>
-        ) : isEditMode ? (
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              onClick={() => {
-                void handleCreateZone();
-              }}
-              disabled={isCreatingZone || isMutating || isGeneratingSeats}
-            >
-              {isCreatingZone ? (
-                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-              ) : (
-                <Plus className="h-4 w-4" aria-hidden="true" />
-              )}
-              구역 추가
-            </Button>
-            {analysisHref ? (
-              <Button asChild variant="outline">
-                <Link href={analysisHref}>
-                  <WandSparkles className="h-4 w-4" aria-hidden="true" />
-                  AI 분석으로 돌아가기
-                </Link>
-              </Button>
-            ) : null}
-          </div>
+        ) : isEditMode && analysisHref ? (
+          <Button asChild variant="outline">
+            <Link href={analysisHref}>
+              <WandSparkles className="h-4 w-4" aria-hidden="true" />
+              AI 분석으로 돌아가기
+            </Link>
+          </Button>
         ) : null}
       </div>
 
@@ -1446,10 +1446,28 @@ export function SeatMapAnalysisPanel({
       </div>
 
       {zones.length === 0 && isEditMode ? (
-        <p className="mt-4 text-sm text-muted-foreground">
-          수정할 구역이 없습니다. 구역 추가를 눌러 직접 구역을 만들 수
-          있습니다.
-        </p>
+        <div className="mt-4 flex flex-wrap items-center gap-3 rounded-md border bg-secondary px-3 py-2">
+          <p className="text-sm text-muted-foreground">
+            수정할 구역이 없습니다. 구역 추가를 눌러 직접 구역을 만들 수
+            있습니다.
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              void handleCreateZone();
+            }}
+            disabled={isCreatingZone || isMutating || isGeneratingSeats}
+          >
+            {isCreatingZone ? (
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <Plus className="h-4 w-4 shrink-0" aria-hidden="true" />
+            )}
+            구역 추가
+          </Button>
+        </div>
       ) : null}
 
       {!isAnalysisMode && message ? (
