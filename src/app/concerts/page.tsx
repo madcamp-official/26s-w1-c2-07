@@ -4,9 +4,7 @@ import {
   CalendarDays,
   ChevronLeft,
   ChevronRight,
-  Grid3X3,
   Info,
-  List,
   MapPin,
   MessageSquare,
   RotateCcw,
@@ -297,7 +295,7 @@ export default async function ConcertListPage({
         </form>
       </section>
 
-      <nav className="mt-6 flex flex-wrap items-center justify-between gap-3">
+      <nav className="mt-6 flex flex-wrap items-center gap-3">
         <div className="flex flex-wrap gap-2" aria-label="공연 목록 필터">
           {scopeTabs.map((tab) => (
             <Button
@@ -311,24 +309,6 @@ export default async function ConcertListPage({
               </Link>
             </Button>
           ))}
-        </div>
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            aria-label="카드 보기"
-          >
-            <Grid3X3 className="h-4 w-4" aria-hidden="true" />
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            aria-label="목록 보기"
-          >
-            <List className="h-4 w-4" aria-hidden="true" />
-          </Button>
         </div>
       </nav>
 
