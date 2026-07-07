@@ -1,8 +1,10 @@
+import Image from "next/image";
 import { redirect } from "next/navigation";
 import { BarChart3, Crosshair, Zap } from "lucide-react";
 
 import { LoginForm } from "@/app/login/login-form";
 import { getCurrentUser } from "@/lib/auth";
+import loginHeroImage from "../../../login-hero.png";
 
 type LoginPageProps = {
   searchParams: Promise<{
@@ -27,7 +29,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
 
   return (
     <main className="grid min-h-[calc(100vh-81px)] lg:grid-cols-[0.9fr_1.1fr]">
-      <section className="flex items-center bg-primary/5 px-6 py-8 sm:px-10 lg:px-14">
+      <section className="flex items-center bg-[#f7f5fc] px-6 py-8 sm:px-10 lg:px-14">
         <div className="mx-auto w-full max-w-xl">
           <p className="text-sm font-bold text-primary">Ticketing Practice</p>
           <h1 className="mt-4 text-3xl font-black leading-tight tracking-normal sm:text-4xl">
@@ -39,20 +41,15 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
             선택해보세요.
           </p>
 
-          <div className="relative mt-6 hidden overflow-hidden rounded-lg border bg-white/70 p-4 shadow-sm sm:block">
-            <div className="mx-auto max-w-xs rounded-lg border bg-gradient-to-br from-primary/10 to-white p-4">
-              <div className="rounded-md bg-primary px-4 py-2 text-center text-sm font-black text-primary-foreground">
-                STAGE
-              </div>
-              <div className="mt-4 grid grid-cols-5 gap-1.5">
-                {Array.from({ length: 25 }).map((_, index) => (
-                  <span
-                    key={index}
-                    className="h-5 rounded-sm bg-primary/20"
-                  />
-                ))}
-              </div>
-            </div>
+          <div className="relative mt-7 hidden aspect-[726/410] w-full max-w-lg overflow-hidden sm:block">
+            <Image
+              src={loginHeroImage}
+              alt="티켓팅 연습 로그인 일러스트"
+              fill
+              priority
+              sizes="(min-width: 1024px) 520px, (min-width: 640px) 520px, 100vw"
+              className="object-contain"
+            />
           </div>
 
           <div className="mt-6 grid gap-3">
