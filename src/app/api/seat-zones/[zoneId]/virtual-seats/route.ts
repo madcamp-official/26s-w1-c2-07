@@ -72,6 +72,7 @@ export async function GET(
       virtualSeatConfig: true,
       seatMap: {
         select: {
+          id: true,
           createdBy: true,
         },
       },
@@ -134,6 +135,7 @@ export async function POST(
     include: {
       seatMap: {
         select: {
+          id: true,
           createdBy: true,
         },
       },
@@ -202,7 +204,17 @@ export async function POST(
         id: seatZone.id,
       },
       data: {
+        allocatedSeatCount: null,
         virtualSeatConfig,
+      },
+    });
+
+    await tx.seatMap.update({
+      where: {
+        id: seatZone.seatMap.id,
+      },
+      data: {
+        totalSeatCount: null,
       },
     });
 

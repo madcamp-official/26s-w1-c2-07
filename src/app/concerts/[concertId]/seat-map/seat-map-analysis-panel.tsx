@@ -7,6 +7,7 @@ import {
   Plus,
   RotateCcw,
   Save,
+  Ticket,
   Trash2,
   WandSparkles,
   X,
@@ -29,12 +30,14 @@ import {
 type AnalysisStatus = "pending" | "success" | "failed";
 
 const LOW_CONFIDENCE_THRESHOLD = 0.65;
+const MAX_TOTAL_SEAT_COUNT = 50_000;
 
 type SeatMapZone = {
   id: string;
   name: string;
   grade: string;
   price: number | null;
+  allocatedSeatCount: number | null;
   bbox: unknown;
   polygon: unknown;
   confidence: number | null;
@@ -52,6 +55,7 @@ type SeatMapAnalysisPanelProps = {
   seatMap: {
     id: string;
     imageUrl: string;
+    totalSeatCount: number | null;
     analysisStatus: AnalysisStatus;
     zones: SeatMapZone[];
   };
@@ -68,6 +72,17 @@ type AnalyzeResponse = {
 };
 
 type ZoneMutationResponse = {
+  error?: {
+    message?: string;
+  };
+};
+
+type SeatGenerationResponse = {
+  data?: {
+    totalSeatCount?: number;
+    zoneCount?: number;
+    seatCount?: number;
+  };
   error?: {
     message?: string;
   };
@@ -113,6 +128,10 @@ export function SeatMapAnalysisPanel({ seatMap }: SeatMapAnalysisPanelProps) {
   const [message, setMessage] = useState("");
   const [isPending, setIsPending] = useState(false);
   const [isMutating, setIsMutating] = useState(false);
+  const [isGeneratingSeats, setIsGeneratingSeats] = useState(false);
+  const [totalSeatCount, setTotalSeatCount] = useState(
+    seatMap.totalSeatCount ? String(seatMap.totalSeatCount) : "",
+  );
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [grade, setGrade] = useState("");
@@ -152,6 +171,7 @@ export function SeatMapAnalysisPanel({ seatMap }: SeatMapAnalysisPanelProps) {
     [seatMap.zones],
   );
   const selectedZone = zones.find((zone) => zone.id === selectedZoneId) ?? null;
+  const minimumSeatCount = zones.length;
 
   function selectZone(zone: AnalyzedSeatMapZone) {
     if (isEditingPolygon && zone.id !== selectedZoneId) {
@@ -434,6 +454,75 @@ export function SeatMapAnalysisPanel({ seatMap }: SeatMapAnalysisPanelProps) {
     }
   }
 
+  async function handleGenerateSeats(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (zones.length === 0) {
+      setMessage("좌석을 배분할 구역이 없습니다.");
+      return;
+    }
+
+    const parsedTotalSeatCount = Number.parseInt(totalSeatCount, 10);
+
+    if (!Number.isInteger(parsedTotalSeatCount)) {
+      setMessage("전체 좌석 수는 정수로 입력해주세요.");
+      return;
+    }
+
+    if (parsedTotalSeatCount < minimumSeatCount) {
+      setMessage(
+        `전체 좌석 수는 현재 좌석 구역 수(${minimumSeatCount}개) 이상이어야 합니다.`,
+      );
+      return;
+    }
+
+    if (parsedTotalSeatCount > MAX_TOTAL_SEAT_COUNT) {
+      setMessage(
+        `전체 좌석 수는 ${MAX_TOTAL_SEAT_COUNT.toLocaleString("ko-KR")}석 이하만 입력할 수 있습니다.`,
+      );
+      return;
+    }
+
+    setIsGeneratingSeats(true);
+    setMessage("");
+
+    try {
+      const response = await fetch(
+        `/api/seat-maps/${seatMap.id}/virtual-seats`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            totalSeatCount: parsedTotalSeatCount,
+            overwrite: true,
+          }),
+        },
+      );
+      const payload = (await response.json()) as SeatGenerationResponse;
+
+      if (!response.ok) {
+        throw new Error(
+          payload.error?.message ?? "좌석 데이터 생성에 실패했습니다.",
+        );
+      }
+
+      setMessage(
+        `${payload.data?.zoneCount ?? zones.length}개 구역에 ${payload.data?.seatCount ?? parsedTotalSeatCount}개의 좌석 데이터를 배분했습니다.`,
+      );
+      router.refresh();
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "좌석 데이터 생성에 실패했습니다.",
+      );
+    } finally {
+      setIsGeneratingSeats(false);
+    }
+  }
+
   async function handleDelete() {
     if (!selectedZone) {
       setMessage("삭제할 좌석 구역을 선택해주세요.");
@@ -511,6 +600,58 @@ export function SeatMapAnalysisPanel({ seatMap }: SeatMapAnalysisPanelProps) {
           재분석하면 현재 좌석 구역과 사용자가 수정한 내용이 새 분석 결과로
           대체됩니다.
         </p>
+      ) : null}
+
+      {seatMap.analysisStatus === "success" && zones.length > 0 ? (
+        <form
+          className="mt-4 rounded-lg border bg-secondary/80 p-4"
+          onSubmit={handleGenerateSeats}
+        >
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_240px_180px] lg:items-end">
+            <div>
+              <div className="flex items-center gap-2">
+                <Ticket className="h-4 w-4 text-primary" aria-hidden="true" />
+                <h3 className="font-semibold">전체 좌석 수 기반 생성</h3>
+              </div>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                입력한 전체 좌석 수를 구역 외곽선 크기에 비례해 배분합니다. 현재
+                허용 범위는 {minimumSeatCount.toLocaleString("ko-KR")}석 이상,{" "}
+                {MAX_TOTAL_SEAT_COUNT.toLocaleString("ko-KR")}석 이하입니다.
+              </p>
+              {seatMap.totalSeatCount ? (
+                <p className="mt-2 text-sm font-medium text-primary">
+                  저장된 전체 좌석 수:{" "}
+                  {seatMap.totalSeatCount.toLocaleString("ko-KR")}석
+                </p>
+              ) : null}
+            </div>
+            <label className="grid gap-1.5 text-sm font-medium">
+              전체 좌석 수
+              <input
+                className="h-11 rounded-md border bg-background px-3 text-sm"
+                inputMode="numeric"
+                min={minimumSeatCount}
+                max={MAX_TOTAL_SEAT_COUNT}
+                value={totalSeatCount}
+                placeholder="예: 15000"
+                onChange={(event) =>
+                  setTotalSeatCount(event.target.value.replace(/[^0-9]/g, ""))
+                }
+                disabled={isGeneratingSeats}
+              />
+            </label>
+            <Button
+              type="submit"
+              className="h-11"
+              disabled={!totalSeatCount || isGeneratingSeats}
+            >
+              {isGeneratingSeats ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              ) : null}
+              좌석 생성
+            </Button>
+          </div>
+        </form>
       ) : null}
 
       <div className="mt-5 overflow-hidden rounded-lg border bg-secondary">
@@ -701,6 +842,9 @@ export function SeatMapAnalysisPanel({ seatMap }: SeatMapAnalysisPanelProps) {
                     {typeof zone.confidence === "number"
                       ? `${Math.round(zone.confidence * 100)}%`
                       : "확인 필요"}
+                    {zone.allocatedSeatCount
+                      ? ` · 배분 ${zone.allocatedSeatCount.toLocaleString("ko-KR")}석`
+                      : ""}
                     {lowConfidence ? " · 확인 필요" : ""}
                     {zone.needsGeometryReview ? " · 외곽선 확인 필요" : ""}
                   </span>

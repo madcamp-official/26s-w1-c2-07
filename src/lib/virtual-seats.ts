@@ -3,14 +3,20 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import {
   generateVirtualSeats,
+  getPolygonArea,
+  MAX_TARGET_VIRTUAL_SEAT_TOTAL,
   normalizeVirtualSeatBbox,
   normalizeVirtualSeatPolygon,
 } from "@/utils/virtualSeatGenerator";
+
+export const MAX_TOTAL_SEAT_COUNT = MAX_TARGET_VIRTUAL_SEAT_TOTAL;
+const VIRTUAL_SEAT_CREATE_BATCH_SIZE = 1_000;
 
 type SeatZoneForGeneration = {
   id: string;
   bbox: unknown;
   polygon: unknown;
+  allocatedSeatCount?: number | null;
   _count?: {
     virtualSeats: number;
   };
@@ -35,6 +41,13 @@ export type VirtualSeatEnsureResult = {
   ready: boolean;
 };
 
+export type AreaSeatAllocation = {
+  zoneId: string;
+  allocatedSeatCount: number;
+  areaRatio: number;
+  geometrySource: "polygon" | "bbox" | "fallback";
+};
+
 function isNormalizedSeatCoordinate(value: number | null | undefined) {
   return (
     typeof value === "number" &&
@@ -42,6 +55,116 @@ function isNormalizedSeatCoordinate(value: number | null | undefined) {
     value >= 0 &&
     value <= 1
   );
+}
+
+function getZoneGeometryWeight(zone: SeatZoneForGeneration) {
+  const polygon = normalizeVirtualSeatPolygon(zone.polygon);
+
+  if (polygon) {
+    return {
+      weight: Math.max(getPolygonArea(polygon), Number.EPSILON),
+      source: "polygon" as const,
+    };
+  }
+
+  const bbox = normalizeVirtualSeatBbox(zone.bbox);
+
+  if (bbox) {
+    return {
+      weight: Math.max(bbox.width * bbox.height, Number.EPSILON),
+      source: "bbox" as const,
+    };
+  }
+
+  return {
+    weight: 1,
+    source: "fallback" as const,
+  };
+}
+
+export function allocateSeatCountsByArea(
+  zones: SeatZoneForGeneration[],
+  totalSeatCount: number,
+) {
+  if (zones.length === 0) {
+    throw new Error("좌석 구역이 없습니다.");
+  }
+
+  if (!Number.isInteger(totalSeatCount)) {
+    throw new Error("전체 좌석 수는 정수여야 합니다.");
+  }
+
+  if (totalSeatCount < zones.length) {
+    throw new Error("전체 좌석 수는 좌석 구역 수보다 작을 수 없습니다.");
+  }
+
+  if (totalSeatCount > MAX_TOTAL_SEAT_COUNT) {
+    throw new Error(
+      `전체 좌석 수는 ${MAX_TOTAL_SEAT_COUNT}석을 넘을 수 없습니다.`,
+    );
+  }
+
+  const zoneWeights = zones.map((zone, index) => ({
+    zone,
+    index,
+    ...getZoneGeometryWeight(zone),
+  }));
+  const totalWeight = zoneWeights.reduce(
+    (sum, zoneWeight) => sum + zoneWeight.weight,
+    0,
+  );
+  const remainingSeatCount = totalSeatCount - zones.length;
+  const allocations = zoneWeights.map((zoneWeight) => {
+    const areaRatio = zoneWeight.weight / totalWeight;
+    const rawAdditionalSeatCount = remainingSeatCount * areaRatio;
+    const additionalSeatCount = Math.floor(rawAdditionalSeatCount);
+
+    return {
+      zoneId: zoneWeight.zone.id,
+      allocatedSeatCount: 1 + additionalSeatCount,
+      areaRatio,
+      geometrySource: zoneWeight.source,
+      remainder: rawAdditionalSeatCount - additionalSeatCount,
+      weight: zoneWeight.weight,
+      index: zoneWeight.index,
+    };
+  });
+  const allocatedSeatCount = allocations.reduce(
+    (sum, allocation) => sum + allocation.allocatedSeatCount,
+    0,
+  );
+  let remainingRemainderSeatCount = totalSeatCount - allocatedSeatCount;
+  const remainderOrder = [...allocations].sort(
+    (first, second) =>
+      second.remainder - first.remainder ||
+      second.weight - first.weight ||
+      first.index - second.index,
+  );
+
+  for (const allocation of remainderOrder) {
+    if (remainingRemainderSeatCount <= 0) {
+      break;
+    }
+
+    allocation.allocatedSeatCount += 1;
+    remainingRemainderSeatCount -= 1;
+  }
+
+  return allocations
+    .sort((first, second) => first.index - second.index)
+    .map(
+      ({
+        zoneId,
+        allocatedSeatCount,
+        areaRatio,
+        geometrySource,
+      }): AreaSeatAllocation => ({
+        zoneId,
+        allocatedSeatCount,
+        areaRatio,
+        geometrySource,
+      }),
+    );
 }
 
 function isJsonObject(value: unknown): value is Record<string, unknown> {
@@ -98,8 +221,13 @@ export function getSeatZonePracticeReadiness(zone: SeatZoneForGeneration) {
 function getGeneratedSeatData(zone: SeatZoneForGeneration) {
   const bbox = normalizeVirtualSeatBbox(zone.bbox);
   const polygon = normalizeVirtualSeatPolygon(zone.polygon);
+  const targetSeatCount =
+    typeof zone.allocatedSeatCount === "number" && zone.allocatedSeatCount > 0
+      ? zone.allocatedSeatCount
+      : undefined;
   const { seats, config } = generateVirtualSeats({
     zoneId: zone.id,
+    targetSeatCount,
     bbox,
     polygon,
   });
@@ -108,13 +236,32 @@ function getGeneratedSeatData(zone: SeatZoneForGeneration) {
     ...config,
     generatedAt: new Date().toISOString(),
     coordinateScope,
-    strategy: "auto",
+    strategy: targetSeatCount ? "area-proportional" : "auto",
+    allocatedSeatCount: targetSeatCount ?? null,
   };
 
   return {
     seats,
     virtualSeatConfig,
   };
+}
+
+async function createVirtualSeatsInBatches(
+  tx: Prisma.TransactionClient,
+  seatsToCreate: Prisma.VirtualSeatCreateManyInput[],
+) {
+  for (
+    let startIndex = 0;
+    startIndex < seatsToCreate.length;
+    startIndex += VIRTUAL_SEAT_CREATE_BATCH_SIZE
+  ) {
+    await tx.virtualSeat.createMany({
+      data: seatsToCreate.slice(
+        startIndex,
+        startIndex + VIRTUAL_SEAT_CREATE_BATCH_SIZE,
+      ),
+    });
+  }
 }
 
 export async function createVirtualSeatsForZones(
@@ -159,9 +306,7 @@ export async function createVirtualSeatsForZones(
   );
 
   if (seatsToCreate.length > 0) {
-    await tx.virtualSeat.createMany({
-      data: seatsToCreate,
-    });
+    await createVirtualSeatsInBatches(tx, seatsToCreate);
   }
 
   for (const generatedZone of generatedZones) {
@@ -170,6 +315,7 @@ export async function createVirtualSeatsForZones(
         id: generatedZone.zone.id,
       },
       data: {
+        allocatedSeatCount: generatedZone.zone.allocatedSeatCount ?? null,
         virtualSeatConfig: generatedZone.virtualSeatConfig,
       },
     });
@@ -178,6 +324,90 @@ export async function createVirtualSeatsForZones(
   return {
     zoneCount: generatedZones.length,
     seatCount: seatsToCreate.length,
+  };
+}
+
+export async function createAreaProportionalVirtualSeatsForSeatMap(
+  tx: Prisma.TransactionClient,
+  input: {
+    zones: SeatZoneForGeneration[];
+    totalSeatCount: number;
+  },
+) {
+  const allocations = allocateSeatCountsByArea(
+    input.zones,
+    input.totalSeatCount,
+  );
+  const allocationsByZoneId = new Map(
+    allocations.map((allocation) => [allocation.zoneId, allocation]),
+  );
+  const zonesToGenerate = input.zones.map((zone) => ({
+    ...zone,
+    allocatedSeatCount:
+      allocationsByZoneId.get(zone.id)?.allocatedSeatCount ?? 1,
+  }));
+
+  await tx.virtualSeat.deleteMany({
+    where: {
+      zoneId: {
+        in: input.zones.map((zone) => zone.id),
+      },
+    },
+  });
+
+  const generatedZones = zonesToGenerate.map((zone) => {
+    const generated = getGeneratedSeatData(zone);
+    const allocation = allocationsByZoneId.get(zone.id);
+    const virtualSeatConfig: Prisma.InputJsonObject = {
+      ...generated.virtualSeatConfig,
+      strategy: "area-proportional",
+      totalSeatCount: input.totalSeatCount,
+      allocatedSeatCount:
+        allocation?.allocatedSeatCount ?? zone.allocatedSeatCount,
+      areaRatio: allocation?.areaRatio ?? null,
+      geometrySource: allocation?.geometrySource ?? null,
+    };
+
+    return {
+      zone,
+      allocation,
+      seats: generated.seats,
+      virtualSeatConfig,
+    };
+  });
+  const seatsToCreate = generatedZones.flatMap(({ seats }) =>
+    seats.map((seat) => ({
+      zoneId: seat.zoneId,
+      rowLabel: seat.rowLabel,
+      seatNumber: seat.seatNumber,
+      status: seat.status,
+      x: seat.x ?? null,
+      y: seat.y ?? null,
+    })),
+  );
+
+  if (seatsToCreate.length > 0) {
+    await createVirtualSeatsInBatches(tx, seatsToCreate);
+  }
+
+  for (const generatedZone of generatedZones) {
+    await tx.seatZone.update({
+      where: {
+        id: generatedZone.zone.id,
+      },
+      data: {
+        allocatedSeatCount:
+          generatedZone.allocation?.allocatedSeatCount ??
+          generatedZone.zone.allocatedSeatCount,
+        virtualSeatConfig: generatedZone.virtualSeatConfig,
+      },
+    });
+  }
+
+  return {
+    zoneCount: generatedZones.length,
+    seatCount: seatsToCreate.length,
+    allocations,
   };
 }
 
@@ -191,6 +421,7 @@ export async function ensureVirtualSeatsForSeatMap(seatMapId: string) {
         id: true,
         bbox: true,
         polygon: true,
+        allocatedSeatCount: true,
         virtualSeatConfig: true,
         _count: {
           select: {

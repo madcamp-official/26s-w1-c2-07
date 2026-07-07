@@ -5,6 +5,7 @@ type GenerateVirtualSeatsOptions = {
   zoneId: string;
   rows?: number;
   seatsPerRow?: number;
+  targetSeatCount?: number;
   bbox?: BoundingBox | null;
   polygon?: Point[] | null;
 };
@@ -13,6 +14,7 @@ export const DEFAULT_VIRTUAL_SEAT_ROWS = 5;
 export const DEFAULT_VIRTUAL_SEATS_PER_ROW = 12;
 export const MIN_VIRTUAL_SEAT_TOTAL = 18;
 export const MAX_VIRTUAL_SEAT_TOTAL = 200;
+export const MAX_TARGET_VIRTUAL_SEAT_TOTAL = 50_000;
 
 const GEOMETRY_EPSILON = 0.000001;
 
@@ -38,7 +40,7 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
-function getPolygonArea(points: Point[]) {
+export function getPolygonArea(points: Point[]) {
   const area = points.reduce((sum, point, index) => {
     const nextPoint = points[(index + 1) % points.length];
 
@@ -202,6 +204,7 @@ export function normalizeVirtualSeatPolygon(value: unknown): Point[] | null {
 function normalizeGridSize(input: {
   rows?: number;
   seatsPerRow?: number;
+  targetSeatCount?: number;
   bbox?: BoundingBox | null;
   polygon?: Point[] | null;
 }) {
@@ -209,6 +212,33 @@ function normalizeGridSize(input: {
     bbox: input.bbox,
     polygon: input.polygon,
   });
+
+  if (typeof input.targetSeatCount === "number") {
+    const targetSeatCount = clamp(
+      input.targetSeatCount,
+      1,
+      MAX_TARGET_VIRTUAL_SEAT_TOTAL,
+    );
+    const bounds = input.polygon?.length
+      ? getPointBounds(input.polygon)
+      : input.bbox;
+    const aspectRatio = bounds
+      ? clamp(bounds.width / bounds.height, 0.18, 5.5)
+      : 1;
+    const seatsPerRow = Math.max(
+      1,
+      Math.ceil(Math.sqrt(targetSeatCount * aspectRatio)),
+    );
+    const rows = Math.max(1, Math.ceil(targetSeatCount / seatsPerRow));
+
+    return {
+      rows,
+      seatsPerRow,
+      targetSeatCount,
+      source: geometryConfig.source,
+    };
+  }
+
   let rows = input.rows ?? geometryConfig.rows;
   let seatsPerRow = input.seatsPerRow ?? geometryConfig.seatsPerRow;
 
@@ -226,6 +256,7 @@ function normalizeGridSize(input: {
   return {
     rows,
     seatsPerRow,
+    targetSeatCount: rows * seatsPerRow,
     source: geometryConfig.source,
   };
 }
@@ -330,6 +361,7 @@ export function generateVirtualSeats({
   zoneId,
   rows,
   seatsPerRow,
+  targetSeatCount,
   bbox,
   polygon,
 }: GenerateVirtualSeatsOptions) {
@@ -337,59 +369,64 @@ export function generateVirtualSeats({
   const config = normalizeGridSize({
     rows,
     seatsPerRow,
+    targetSeatCount,
     bbox,
     polygon: usablePolygon,
   });
-  const seats: GeneratedVirtualSeat[] = Array.from({
-    length: config.rows,
-  }).flatMap((_, rowIndex) => {
-    const rowLabel = `${rowIndex + 1}열`;
+  const polygonBounds = usablePolygon ? getPointBounds(usablePolygon) : null;
+  const fallbackBounds = bbox ?? polygonBounds;
+  const seats: GeneratedVirtualSeat[] = Array.from(
+    {
+      length: config.targetSeatCount,
+    },
+    (_, seatOffset) => {
+      const rowIndex = Math.floor(seatOffset / config.seatsPerRow);
+      const seatIndex = seatOffset % config.seatsPerRow;
+      const rowLabel = `${rowIndex + 1}열`;
+      const seatsInRow =
+        rowIndex === config.rows - 1
+          ? config.targetSeatCount - rowIndex * config.seatsPerRow
+          : config.seatsPerRow;
+      const polygonPoint = usablePolygon?.length
+        ? generatePolygonSeatPoint({
+            polygon: usablePolygon,
+            rowIndex,
+            rowCount: config.rows,
+            seatIndex,
+            seatsPerRow: seatsInRow,
+          })
+        : null;
 
-    return Array.from({ length: config.seatsPerRow }).flatMap(
-      (__, seatIndex) => {
-        const polygonPoint = usablePolygon?.length
-          ? generatePolygonSeatPoint({
-              polygon: usablePolygon,
-              rowIndex,
-              rowCount: config.rows,
-              seatIndex,
-              seatsPerRow: config.seatsPerRow,
-            })
-          : null;
+      const x = polygonPoint
+        ? polygonPoint.x
+        : fallbackBounds
+          ? fallbackBounds.x +
+            fallbackBounds.width * ((seatIndex + 1) / (seatsInRow + 1))
+          : undefined;
+      const y = polygonPoint
+        ? polygonPoint.y
+        : fallbackBounds
+          ? fallbackBounds.y +
+            fallbackBounds.height * ((rowIndex + 1) / (config.rows + 1))
+          : undefined;
 
-        if (usablePolygon?.length && !polygonPoint) {
-          return [];
-        }
-
-        const x = polygonPoint
-          ? polygonPoint.x
-          : bbox
-            ? bbox.x + bbox.width * ((seatIndex + 1) / (config.seatsPerRow + 1))
-            : undefined;
-        const y = polygonPoint
-          ? polygonPoint.y
-          : bbox
-            ? bbox.y + bbox.height * ((rowIndex + 1) / (config.rows + 1))
-            : undefined;
-
-        return [
-          {
-            zoneId,
-            rowLabel,
-            seatNumber: seatIndex + 1,
-            status: "available" as const,
-            x,
-            y,
-          },
-        ];
-      },
-    );
-  });
+      return {
+        zoneId,
+        rowLabel,
+        seatNumber: seatIndex + 1,
+        status: "available" as const,
+        x,
+        y,
+      };
+    },
+  );
 
   return {
     seats,
     config: {
-      ...config,
+      rows: config.rows,
+      seatsPerRow: config.seatsPerRow,
+      source: config.source,
       totalSeats: seats.length,
     } satisfies VirtualSeatGenerationConfig,
   };
