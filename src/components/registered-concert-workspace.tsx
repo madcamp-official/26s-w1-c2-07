@@ -24,6 +24,7 @@ type RegisteredConcertWorkspaceProps = {
   showTip?: boolean;
   concerts: RegisteredConcertSummary[];
   selectedConcertId: string | null;
+  sidebarListSize?: "auto" | "three";
   emptyTitle: string;
   emptyDescription: string;
   children?: ReactNode;
@@ -60,10 +61,12 @@ function RegisteredConcertCard({
   concert,
   mode,
   selected,
+  fixedHeight,
 }: {
   concert: RegisteredConcertSummary;
   mode: WorkspaceMode;
   selected: boolean;
+  fixedHeight?: boolean;
 }) {
   const href = `${modeHref[mode]}?concertId=${encodeURIComponent(concert.id)}`;
   const statusLabel = getSeatMapStatusLabel(
@@ -75,15 +78,16 @@ function RegisteredConcertCard({
       href={href}
       className={cn(
         "group grid grid-cols-[76px_minmax(0,1fr)_18px] gap-3 rounded-lg border bg-background p-3 shadow-sm transition hover:border-primary/60",
+        fixedHeight && "h-[148px] overflow-hidden",
         selected && "border-primary bg-primary/5 ring-1 ring-primary/30",
       )}
     >
-      <div className="overflow-hidden rounded-md border bg-secondary">
+      <div className="h-[76px] w-[76px] overflow-hidden rounded-md border bg-secondary">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={concert.posterImageUrl ?? concert.latestSeatMap.imageUrl}
           alt=""
-          className="aspect-square h-full w-full object-cover"
+          className="h-full w-full object-cover"
         />
       </div>
       <div className="min-w-0">
@@ -121,11 +125,13 @@ export function RegisteredConcertWorkspace({
   showTip = true,
   concerts,
   selectedConcertId,
+  sidebarListSize = "auto",
   emptyTitle,
   emptyDescription,
   children,
 }: RegisteredConcertWorkspaceProps) {
   const hasConcerts = concerts.length > 0;
+  const showThreeSidebarItems = sidebarListSize === "three";
 
   return (
     <main className="mx-auto w-full max-w-7xl px-5 py-8 sm:px-8">
@@ -176,13 +182,21 @@ export function RegisteredConcertWorkspace({
                 </span>
               </div>
 
-              <div className="mt-4 max-h-[calc(100vh-260px)] space-y-3 overflow-y-auto pr-1">
+              <div
+                className={cn(
+                  "mt-4 space-y-3 overflow-y-auto overscroll-contain pr-1",
+                  showThreeSidebarItems
+                    ? "max-h-[468px]"
+                    : "max-h-[calc(100vh-260px)]",
+                )}
+              >
                 {concerts.map((concert) => (
                   <RegisteredConcertCard
                     key={concert.id}
                     concert={concert}
                     mode={mode}
                     selected={concert.id === selectedConcertId}
+                    fixedHeight={showThreeSidebarItems}
                   />
                 ))}
               </div>
