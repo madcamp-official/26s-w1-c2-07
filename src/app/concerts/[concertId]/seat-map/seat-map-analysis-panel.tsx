@@ -13,7 +13,6 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { VirtualSeatPanel } from "@/app/concerts/[concertId]/seat-map/virtual-seat-panel";
 import {
   getBboxCenter,
   getPolygonCenter,
@@ -61,6 +60,7 @@ type SeatMapAnalysisPanelProps = {
 type AnalyzeResponse = {
   data?: {
     zoneCount?: number;
+    seatCount?: number;
   };
   error?: {
     message?: string;
@@ -215,7 +215,9 @@ export function SeatMapAnalysisPanel({ seatMap }: SeatMapAnalysisPanelProps) {
         ? editablePolygon
         : getEditablePolygonFromZone(selectedZone);
     const insertAfterIndex =
-      selectedPointIndex !== null ? selectedPointIndex : currentPolygon.length - 1;
+      selectedPointIndex !== null
+        ? selectedPointIndex
+        : currentPolygon.length - 1;
     const nextIndex = (insertAfterIndex + 1) % currentPolygon.length;
     const currentPoint = currentPolygon[insertAfterIndex];
     const nextPoint = currentPolygon[nextIndex];
@@ -332,7 +334,7 @@ export function SeatMapAnalysisPanel({ seatMap }: SeatMapAnalysisPanelProps) {
       }
 
       setMessage(
-        `${payload.data?.zoneCount ?? 0}개의 좌석 구역 후보를 저장했습니다.`,
+        `${payload.data?.zoneCount ?? 0}개의 좌석 구역을 저장하고 ${payload.data?.seatCount ?? 0}개의 좌석 선택 데이터를 준비했습니다.`,
       );
       setSelectedZoneId(null);
       setName("");
@@ -411,7 +413,11 @@ export function SeatMapAnalysisPanel({ seatMap }: SeatMapAnalysisPanelProps) {
         );
       }
 
-      setMessage("좌석 구역 정보를 저장했습니다.");
+      setMessage(
+        isEditingPolygon
+          ? "좌석 구역 정보와 좌석 선택 데이터를 저장했습니다."
+          : "좌석 구역 정보를 저장했습니다.",
+      );
       setIsEditingPolygon(false);
       setEditablePolygon([]);
       setSelectedPointIndex(null);
@@ -484,11 +490,7 @@ export function SeatMapAnalysisPanel({ seatMap }: SeatMapAnalysisPanelProps) {
           </p>
           <h2 className="mt-1 text-xl font-black">AI 좌석 구역 분석</h2>
         </div>
-        <Button
-          type="button"
-          onClick={handleAnalyze}
-          disabled={isPending}
-        >
+        <Button type="button" onClick={handleAnalyze} disabled={isPending}>
           {isPending ? (
             <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
           ) : (
@@ -653,7 +655,9 @@ export function SeatMapAnalysisPanel({ seatMap }: SeatMapAnalysisPanelProps) {
                   {zone.name} · {zone.grade}
                 </span>
                 {zone.needsGeometryReview ? (
-                  <span className="block truncate text-amber-700">확인 필요</span>
+                  <span className="block truncate text-amber-700">
+                    확인 필요
+                  </span>
                 ) : null}
               </button>
             );
@@ -880,16 +884,14 @@ export function SeatMapAnalysisPanel({ seatMap }: SeatMapAnalysisPanelProps) {
               </div>
             </form>
 
-            {selectedZone ? (
-              <VirtualSeatPanel key={selectedZone.id} zone={selectedZone} />
-            ) : (
-              <section className="rounded-md border bg-secondary p-4">
-                <h3 className="font-semibold">가상 좌석</h3>
-                <p className="mt-2 text-sm text-muted-foreground">
-                  좌석 구역을 선택하면 연습용 가상 좌석을 생성할 수 있습니다.
-                </p>
-              </section>
-            )}
+            <section className="rounded-md border bg-secondary p-4">
+              <h3 className="font-semibold">티켓팅 연습 반영</h3>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                {selectedZone
+                  ? `${selectedZone.name} 구역은 저장된 외곽선과 크기를 기준으로 좌석 선택 연습에 자동 반영됩니다.`
+                  : "좌석 구역을 선택하면 연습 화면에 반영될 기준 정보를 확인할 수 있습니다."}
+              </p>
+            </section>
           </div>
         </div>
       ) : (

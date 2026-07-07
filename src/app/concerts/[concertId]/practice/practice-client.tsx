@@ -837,12 +837,21 @@ function createYes24SeatGroups(zones: SeatZoneWithGeometry[]) {
 
 function getDefaultYes24SeatGroupId(groups: Yes24SeatGroup[]) {
   return (
-    [...groups].sort(
-      (firstGroup, secondGroup) =>
+    [...groups].sort((firstGroup, secondGroup) => {
+      const firstHasSeats = firstGroup.zones.some(
+        (zone) => zone.virtualSeats.length > 0,
+      );
+      const secondHasSeats = secondGroup.zones.some(
+        (zone) => zone.virtualSeats.length > 0,
+      );
+
+      return (
+        Number(secondHasSeats) - Number(firstHasSeats) ||
         firstGroup.bounds.y - secondGroup.bounds.y ||
         secondGroup.center.x - firstGroup.center.x ||
-        firstGroup.label.localeCompare(secondGroup.label, "ko-KR"),
-    )[0]?.id ?? null
+        firstGroup.label.localeCompare(secondGroup.label, "ko-KR")
+      );
+    })[0]?.id ?? null
   );
 }
 
@@ -1431,16 +1440,10 @@ export function PracticeClient({
             const fallbackY = bbox
               ? bbox.y + bbox.height * ((rowIndex + 1) / (rows.length + 1))
               : null;
-            const x = polygon
-              ? polygonPoint?.x
-              : isNormalizedCoordinate(seat.x)
-                ? seat.x
-                : fallbackX;
-            const y = polygon
-              ? polygonPoint?.y
-              : isNormalizedCoordinate(seat.y)
-                ? seat.y
-                : fallbackY;
+            const storedX = isNormalizedCoordinate(seat.x) ? seat.x : null;
+            const storedY = isNormalizedCoordinate(seat.y) ? seat.y : null;
+            const x = polygonPoint?.x ?? storedX ?? fallbackX;
+            const y = polygonPoint?.y ?? storedY ?? fallbackY;
 
             if (!isNormalizedCoordinate(x) || !isNormalizedCoordinate(y)) {
               return [];
@@ -2446,7 +2449,7 @@ export function PracticeClient({
           </div>
         ) : (
           <p className="rounded-md border bg-background px-4 py-6 text-center text-sm text-muted-foreground">
-            선택한 구역에 생성된 가상 좌석이 없습니다.
+            선택한 구역의 좌석 데이터를 준비하지 못했습니다.
           </p>
         )}
       </div>
@@ -2492,7 +2495,7 @@ export function PracticeClient({
           </h1>
           <p className="mt-3 text-sm leading-6 text-muted-foreground">
             실제 예매가 아닌 연습용 흐름입니다. 좌석은 AI 분석 구역을 바탕으로
-            생성한 VirtualSeat입니다.
+            준비한 연습용 좌석 데이터입니다.
           </p>
         </div>
 
@@ -3094,8 +3097,8 @@ export function PracticeClient({
                         </div>
                       ) : (
                         <p className="rounded-md border bg-background px-4 py-6 text-center text-sm text-muted-foreground">
-                          표시할 구역 그룹 또는 좌석 좌표가 없습니다. 좌석
-                          데이터를 다시 생성해주세요.
+                          좌석 선택 화면을 준비하지 못했습니다. 좌석 배치도 분석
+                          결과를 확인해주세요.
                         </p>
                       )}
                     </div>
@@ -3510,7 +3513,7 @@ export function PracticeClient({
                           </div>
                         ) : (
                           <p className="rounded-md border bg-background px-4 py-6 text-center text-sm text-muted-foreground">
-                            선택한 구역에 생성된 가상 좌석이 없습니다.
+                            선택한 구역의 좌석 데이터를 준비하지 못했습니다.
                           </p>
                         )}
                       </div>

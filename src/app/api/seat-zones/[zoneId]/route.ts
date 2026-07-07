@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { apiData, apiError } from "@/lib/api";
 import { getCurrentUserWithProfile } from "@/lib/auth";
 import { seatZoneUpdateSchema } from "@/lib/validators";
+import { createVirtualSeatsForZones } from "@/lib/virtual-seats";
 
 const seatZoneParamsSchema = z.object({
   zoneId: z.string().uuid(),
@@ -65,25 +66,51 @@ export async function PATCH(
     return apiError("좌석 구역을 수정할 권한이 없습니다.", 403);
   }
 
-  const updatedZone = await prisma.seatZone.update({
-    where: {
-      id: seatZone.id,
+  const { updatedZone, seatPreparation } = await prisma.$transaction(
+    async (tx) => {
+      const updatedZone = await tx.seatZone.update({
+        where: {
+          id: seatZone.id,
+        },
+        data: {
+          name: parsedBody.data.name,
+          grade: parsedBody.data.grade,
+          price: parsedBody.data.price ?? null,
+          ...(parsedBody.data.polygon
+            ? {
+                polygon: parsedBody.data
+                  .polygon as unknown as Prisma.InputJsonValue,
+              }
+            : {}),
+          isAiGenerated: false,
+        },
+      });
+      const seatPreparation = parsedBody.data.polygon
+        ? await createVirtualSeatsForZones(
+            tx,
+            [
+              {
+                id: updatedZone.id,
+                bbox: updatedZone.bbox,
+                polygon: updatedZone.polygon,
+              },
+            ],
+            {
+              overwrite: true,
+            },
+          )
+        : null;
+
+      return {
+        updatedZone,
+        seatPreparation,
+      };
     },
-    data: {
-      name: parsedBody.data.name,
-      grade: parsedBody.data.grade,
-      price: parsedBody.data.price ?? null,
-      ...(parsedBody.data.polygon
-        ? {
-            polygon: parsedBody.data.polygon as unknown as Prisma.InputJsonValue,
-          }
-        : {}),
-      isAiGenerated: false,
-    },
-  });
+  );
 
   return apiData({
     seatZone: updatedZone,
+    seatCount: seatPreparation?.seatCount ?? null,
   });
 }
 

@@ -10,6 +10,7 @@ import {
   getRegisteredConcertsForUser,
   getRegisteredPracticeConcert,
 } from "@/lib/registered-concerts";
+import { ensureVirtualSeatsForSeatMap } from "@/lib/virtual-seats";
 
 type PracticeHubPageProps = {
   searchParams?: Promise<{
@@ -32,12 +33,10 @@ function PracticePreparationState({
   concertId,
   hasSeatMap,
   hasZones,
-  hasVirtualSeats,
 }: {
   concertId: string;
   hasSeatMap: boolean;
   hasZones: boolean;
-  hasVirtualSeats: boolean;
 }) {
   return (
     <section className="rounded-lg border bg-card p-5 shadow-sm">
@@ -48,8 +47,8 @@ function PracticePreparationState({
         <div>
           <h2 className="text-xl font-black">티켓팅 연습 준비가 필요합니다</h2>
           <p className="mt-3 text-sm leading-6 text-muted-foreground">
-            티켓팅 연습을 시작하려면 좌석 배치도 AI 분석과 구역별 가상 좌석
-            생성이 먼저 완료되어야 합니다.
+            티켓팅 연습을 시작하려면 좌석 배치도 AI 분석이 먼저 완료되어야
+            합니다.
           </p>
         </div>
       </div>
@@ -61,16 +60,13 @@ function PracticePreparationState({
         <p className="rounded-md border bg-secondary px-3 py-2">
           AI 분석: {hasZones ? "완료" : "필요"}
         </p>
-        <p className="rounded-md border bg-secondary px-3 py-2">
-          가상 좌석: {hasVirtualSeats ? "생성됨" : "필요"}
-        </p>
       </div>
 
       <div className="mt-6 flex flex-wrap gap-2">
         <Button asChild>
           <Link href={`/concerts/${concertId}/seat-map`}>
             <ImageUp className="h-4 w-4" aria-hidden="true" />
-            좌석 데이터 준비하기
+            좌석 배치도 확인하기
           </Link>
         </Button>
         <Button asChild variant="outline">
@@ -158,17 +154,38 @@ export default async function PracticeHubPage({
   const selectedConcertSummary =
     registeredConcerts.find((concert) => concert.id === selectedConcertId) ??
     null;
-  const selectedConcert = selectedConcertId
+  let selectedConcert = selectedConcertId
     ? await getRegisteredPracticeConcert(user.id, selectedConcertId)
     : null;
-  const latestSeatMap = selectedConcert?.seatMaps[0] ?? null;
-  const zones =
+  let latestSeatMap = selectedConcert?.seatMaps[0] ?? null;
+  let zones =
     latestSeatMap?.zones.map((zone) => ({
       ...zone,
       virtualSeats: zone.virtualSeats,
     })) ?? [];
-  const hasZones = zones.length > 0;
-  const hasVirtualSeats = zones.some((zone) => zone.virtualSeats.length > 0);
+  let hasZones = zones.length > 0;
+  let isPracticeReady = false;
+
+  if (selectedConcertId && latestSeatMap && hasZones) {
+    const seatPreparation = await ensureVirtualSeatsForSeatMap(
+      latestSeatMap.id,
+    );
+    selectedConcert = await getRegisteredPracticeConcert(
+      user.id,
+      selectedConcertId,
+    );
+    latestSeatMap = selectedConcert?.seatMaps[0] ?? null;
+    zones =
+      latestSeatMap?.zones.map((zone) => ({
+        ...zone,
+        virtualSeats: zone.virtualSeats,
+      })) ?? [];
+    hasZones = zones.length > 0;
+    isPracticeReady =
+      seatPreparation.ready &&
+      zones.length > 0 &&
+      zones.every((zone) => zone.virtualSeats.length > 0);
+  }
 
   return (
     <RegisteredConcertWorkspace
@@ -183,7 +200,7 @@ export default async function PracticeHubPage({
       emptyDescription="공연을 선택하고 좌석 배치도를 등록하면 티켓팅 연습을 시작할 수 있습니다."
     >
       {selectedConcertSummary ? (
-        selectedConcert && latestSeatMap && hasZones && hasVirtualSeats ? (
+        selectedConcert && latestSeatMap && hasZones && isPracticeReady ? (
           <PracticeWorkspaceClient
             concert={{
               id: selectedConcert.id,
@@ -236,7 +253,6 @@ export default async function PracticeHubPage({
                 concertId={selectedConcertSummary.id}
                 hasSeatMap={Boolean(selectedConcertSummary.latestSeatMap)}
                 hasZones={Boolean(latestSeatMap && hasZones)}
-                hasVirtualSeats={hasVirtualSeats}
               />
             </div>
           </div>

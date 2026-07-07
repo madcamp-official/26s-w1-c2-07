@@ -10,6 +10,7 @@ import {
   aiSeatMapAnalysisSchema,
   normalizeSeatMapAnalysis,
 } from "@/lib/seat-zone-analysis";
+import { createVirtualSeatsForZones } from "@/lib/virtual-seats";
 
 export const runtime = "nodejs";
 
@@ -41,7 +42,7 @@ function getAnalysisPrompt(input: {
     "- 구역명, 등급, bbox, polygon, confidence를 반환하세요.",
     "- 등급은 VIP, R, S, A, B, C처럼 티켓 가격 등급이 이미지에 명확히 표시된 경우에만 입력하세요.",
     "- FLOOR, 1층, 2층, 3층, 스탠딩, 콘솔처럼 층/좌석 유형/구역 정보를 등급으로 넣지 마세요.",
-    "- 티켓 가격 등급이 이미지에 없거나 확실하지 않으면 grade는 반드시 \"미확인\"으로 반환하세요.",
+    '- 티켓 가격 등급이 이미지에 없거나 확실하지 않으면 grade는 반드시 "미확인"으로 반환하세요.',
     "- bbox와 polygon 좌표는 이미지 전체 기준 0~1 정규화 좌표로 반환하세요.",
     "- bbox는 { x, y, width, height } 형식이며 x/y는 좌상단 기준입니다.",
     "- polygon은 좌석 구역의 실제 보이는 외곽선을 시계 방향 또는 반시계 방향 점 배열로 반환하세요.",
@@ -158,46 +159,76 @@ export async function POST(
       imprecisePolygonCount,
     };
 
-    const updatedSeatMap = await prisma.$transaction(async (tx) => {
-      await tx.seatZone.deleteMany({
-        where: {
-          seatMapId: seatMap.id,
-        },
-      });
+    const { updatedSeatMap, virtualSeatResult } = await prisma.$transaction(
+      async (tx) => {
+        await tx.seatZone.deleteMany({
+          where: {
+            seatMapId: seatMap.id,
+          },
+        });
 
-      await tx.seatZone.createMany({
-        data: zones.map((zone) => ({
-          seatMapId: seatMap.id,
-          name: zone.name,
-          grade: zone.grade,
-          bbox: zone.bbox as Prisma.InputJsonValue,
-          polygon: zone.polygon as unknown as Prisma.InputJsonValue,
-          confidence: zone.confidence,
-          isAiGenerated: true,
-        })),
-      });
+        await tx.seatZone.createMany({
+          data: zones.map((zone) => ({
+            seatMapId: seatMap.id,
+            name: zone.name,
+            grade: zone.grade,
+            bbox: zone.bbox as Prisma.InputJsonValue,
+            polygon: zone.polygon as unknown as Prisma.InputJsonValue,
+            confidence: zone.confidence,
+            isAiGenerated: true,
+          })),
+        });
 
-      return tx.seatMap.update({
-        where: {
-          id: seatMap.id,
-        },
-        data: {
-          analysisStatus: "success",
-          aiRawResult,
-        },
-        include: {
-          zones: {
-            orderBy: {
-              createdAt: "asc",
+        const createdZones = await tx.seatZone.findMany({
+          where: {
+            seatMapId: seatMap.id,
+          },
+          select: {
+            id: true,
+            bbox: true,
+            polygon: true,
+            _count: {
+              select: {
+                virtualSeats: true,
+              },
             },
           },
-        },
-      });
-    });
+        });
+        const virtualSeatResult = await createVirtualSeatsForZones(
+          tx,
+          createdZones,
+          {
+            overwrite: true,
+          },
+        );
+        const updatedSeatMap = await tx.seatMap.update({
+          where: {
+            id: seatMap.id,
+          },
+          data: {
+            analysisStatus: "success",
+            aiRawResult,
+          },
+          include: {
+            zones: {
+              orderBy: {
+                createdAt: "asc",
+              },
+            },
+          },
+        });
+
+        return {
+          updatedSeatMap,
+          virtualSeatResult,
+        };
+      },
+    );
 
     return apiData({
       seatMap: updatedSeatMap,
       zoneCount: zones.length,
+      seatCount: virtualSeatResult.seatCount,
     });
   } catch (error) {
     const message = getErrorMessage(error);

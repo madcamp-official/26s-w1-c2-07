@@ -6,6 +6,7 @@ import {
   generateVirtualSeats,
   MAX_VIRTUAL_SEAT_TOTAL,
   normalizeVirtualSeatBbox,
+  normalizeVirtualSeatPolygon,
 } from "@/utils/virtualSeatGenerator";
 
 describe("virtualSeatGenerator", () => {
@@ -23,10 +24,39 @@ describe("virtualSeatGenerator", () => {
       width: 0.3,
       height: 0.4,
     });
-    expect(normalizeVirtualSeatBbox({ x: 0.8, y: 0, width: 0.3, height: 1 }))
-      .toBeNull();
-    expect(normalizeVirtualSeatBbox({ x: 0, y: 0, width: 0, height: 1 }))
-      .toBeNull();
+    expect(
+      normalizeVirtualSeatBbox({ x: 0.8, y: 0, width: 0.3, height: 1 }),
+    ).toBeNull();
+    expect(
+      normalizeVirtualSeatBbox({ x: 0, y: 0, width: 0, height: 1 }),
+    ).toBeNull();
+  });
+
+  it("normalizes valid polygon values and rejects invalid values", () => {
+    expect(
+      normalizeVirtualSeatPolygon([
+        { x: 0.1, y: 0.2 },
+        { x: 0.5, y: 0.2 },
+        { x: 0.4, y: 0.6 },
+      ]),
+    ).toEqual([
+      { x: 0.1, y: 0.2 },
+      { x: 0.5, y: 0.2 },
+      { x: 0.4, y: 0.6 },
+    ]);
+    expect(
+      normalizeVirtualSeatPolygon([
+        { x: 0.1, y: 0.2 },
+        { x: 0.5, y: 0.2 },
+      ]),
+    ).toBeNull();
+    expect(
+      normalizeVirtualSeatPolygon([
+        { x: 0.1, y: 0.2 },
+        { x: 1.2, y: 0.2 },
+        { x: 0.4, y: 0.6 },
+      ]),
+    ).toBeNull();
   });
 
   it("generates default virtual seats when bbox is not provided", () => {
@@ -64,8 +94,8 @@ describe("virtualSeatGenerator", () => {
 
     expect(result.config.source).toBe("bbox");
     expect(result.config.rows).toBe(12);
-    expect(result.config.seatsPerRow).toBe(12);
-    expect(result.seats).toHaveLength(144);
+    expect(result.config.seatsPerRow).toBe(9);
+    expect(result.seats).toHaveLength(108);
     expect(
       result.seats.every(
         (seat) =>
@@ -75,6 +105,61 @@ describe("virtualSeatGenerator", () => {
           seat.x < bbox.x + bbox.width &&
           seat.y > bbox.y &&
           seat.y < bbox.y + bbox.height,
+      ),
+    ).toBe(true);
+  });
+
+  it("adjusts grid shape to match wide and tall zones", () => {
+    const wideResult = generateVirtualSeats({
+      zoneId: "zone-wide",
+      bbox: {
+        x: 0.1,
+        y: 0.2,
+        width: 0.5,
+        height: 0.1,
+      },
+    });
+    const tallResult = generateVirtualSeats({
+      zoneId: "zone-tall",
+      bbox: {
+        x: 0.1,
+        y: 0.2,
+        width: 0.1,
+        height: 0.5,
+      },
+    });
+
+    expect(wideResult.config.seatsPerRow).toBeGreaterThan(
+      wideResult.config.rows,
+    );
+    expect(tallResult.config.rows).toBeGreaterThan(
+      tallResult.config.seatsPerRow,
+    );
+  });
+
+  it("generates polygon-based seat positions inside the selected shape", () => {
+    const polygon = [
+      { x: 0.1, y: 0.1 },
+      { x: 0.5, y: 0.1 },
+      { x: 0.4, y: 0.4 },
+      { x: 0.2, y: 0.4 },
+    ];
+    const result = generateVirtualSeats({
+      zoneId: "zone-1",
+      polygon,
+    });
+
+    expect(result.config.source).toBe("polygon");
+    expect(result.seats.length).toBeGreaterThanOrEqual(18);
+    expect(
+      result.seats.every(
+        (seat) =>
+          typeof seat.x === "number" &&
+          typeof seat.y === "number" &&
+          seat.x >= 0.1 &&
+          seat.x <= 0.5 &&
+          seat.y >= 0.1 &&
+          seat.y <= 0.4,
       ),
     ).toBe(true);
   });

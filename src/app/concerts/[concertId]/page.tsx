@@ -246,7 +246,7 @@ export default async function ConcertDetailPage({
               />
               <p>
                 공연 일정 및 좌석 배치는 주최측 사정에 따라 변경될 수 있습니다.
-                연습용 가상 좌석은 실제 좌석 정보와 다를 수 있습니다.
+                연습용 좌석 데이터는 실제 좌석 정보와 다를 수 있습니다.
               </p>
             </div>
           </div>
