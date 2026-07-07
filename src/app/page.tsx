@@ -16,6 +16,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { getConcertList } from "@/lib/concerts";
 import { prisma } from "@/lib/prisma";
 import { formatDateRange } from "@/utils/format";
+import homeBannerImage from "../../home-banner-homeblend.png";
 
 async function getRecentReviews() {
   return prisma.review.findMany({
@@ -102,35 +103,15 @@ export default async function Home() {
             </div>
           </div>
 
-          <div className="relative hidden min-h-[280px] items-center justify-center lg:flex">
-            <div className="absolute inset-x-10 bottom-5 h-24 rounded-full bg-primary/15 blur-2xl" />
-            <div className="relative w-full max-w-lg rounded-lg border bg-gradient-to-br from-primary/10 via-white to-primary/5 p-6 shadow-lg">
-              <div className="rounded-md bg-primary px-4 py-3 text-center text-sm font-black text-primary-foreground">
-                STAGE
-              </div>
-              <div className="mt-6 grid grid-cols-3 gap-3">
-                {["F1", "F2", "F3", "D1", "D2", "D3", "210", "209", "208"].map(
-                  (label, index) => (
-                    <div
-                      key={label}
-                      className={[
-                        "flex h-20 items-center justify-center rounded-md border text-sm font-black shadow-sm",
-                        index < 3
-                          ? "bg-sky-100 text-sky-950"
-                          : index < 6
-                            ? "bg-emerald-100 text-emerald-950"
-                            : "bg-orange-100 text-orange-950",
-                      ].join(" ")}
-                    >
-                      {label}
-                    </div>
-                  ),
-                )}
-              </div>
-              <div className="mt-6 rotate-[-6deg] rounded-md border bg-white px-8 py-5 text-center text-lg font-black shadow-md">
-                PRACTICE MAKES PERFECT
-              </div>
-            </div>
+          <div className="relative min-h-[240px] lg:min-h-[280px]">
+            <Image
+              src={homeBannerImage}
+              alt="티켓팅 연습 홈 배너"
+              fill
+              priority
+              sizes="(min-width: 1024px) 520px, 100vw"
+              className="object-contain"
+            />
           </div>
         </div>
       </section>
@@ -197,14 +178,9 @@ export default async function Home() {
                       {concert.venueName}
                     </p>
                   </div>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid">
                     <Button asChild variant="outline" size="sm">
                       <Link href={`/concerts/${concert.id}`}>상세보기</Link>
-                    </Button>
-                    <Button asChild size="sm">
-                      <Link href={`/concerts/${concert.id}/practice`}>
-                        연습하기
-                      </Link>
                     </Button>
                   </div>
                 </div>
