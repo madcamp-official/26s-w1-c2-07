@@ -493,11 +493,16 @@ function ReviewList({
         const isDeleting = deletingReviewId === review.id;
 
         return (
-          <article key={review.id} className="rounded-md border p-4">
+          <article
+            key={review.id}
+            className="min-w-0 overflow-hidden rounded-md border p-4"
+          >
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div className="min-w-0">
-                <p className="font-medium">{review.concert.title}</p>
-                <p className="mt-1 text-sm text-muted-foreground">
+                <p className="break-words font-medium">
+                  {review.concert.title}
+                </p>
+                <p className="mt-1 break-words text-sm text-muted-foreground">
                   {review.concert.venueName} · {formatReviewSeat(review)}
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">
@@ -543,22 +548,22 @@ function ReviewList({
               ))}
             </div>
 
-            <p className="mt-4 whitespace-pre-wrap text-sm leading-6">
+            <p className="mt-4 whitespace-pre-wrap break-words text-sm leading-6 [overflow-wrap:anywhere]">
               {review.content}
             </p>
 
             {getReviewImageUrls(review).length > 0 ? (
-              <div className="mt-4 grid grid-cols-2 gap-2">
+              <div className="mt-4 flex min-w-0 flex-wrap gap-2">
                 {getReviewImageUrls(review).map((imageUrl, imageIndex) => (
                   <div
                     key={imageUrl}
-                    className="overflow-hidden rounded-md border bg-secondary"
+                    className="h-24 w-24 shrink-0 overflow-hidden rounded-md border bg-secondary sm:h-28 sm:w-28"
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={imageUrl}
                       alt={`리뷰 시야 사진 ${imageIndex + 1}`}
-                      className="aspect-square w-full object-cover"
+                      className="h-full w-full object-cover"
                     />
                   </div>
                 ))}
