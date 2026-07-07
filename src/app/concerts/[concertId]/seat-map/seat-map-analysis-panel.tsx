@@ -41,6 +41,9 @@ const LOW_CONFIDENCE_THRESHOLD = 0.65;
 const MAX_TOTAL_SEAT_COUNT = 50_000;
 const DONUT_RADIUS = 44;
 const DONUT_CIRCUMFERENCE = 2 * Math.PI * DONUT_RADIUS;
+const UNKNOWN_GRADE_LABEL = "미확인";
+const CREATED_ZONE_WIDTH = 0.2;
+const CREATED_ZONE_HEIGHT = 0.16;
 
 type SeatMapZone = {
   id: string;
@@ -98,6 +101,12 @@ type ZoneMutationResponse = {
   };
 };
 
+type ZoneCreateResponse = ZoneMutationResponse & {
+  data?: {
+    seatZone?: SeatMapZone;
+  };
+};
+
 type SeatGenerationResponse = {
   data?: {
     totalSeatCount?: number;
@@ -147,6 +156,42 @@ function getImageSpacePolygonPointsAttribute(
     .join(" ");
 }
 
+function getVisibleGrade(grade: string) {
+  const trimmedGrade = grade.trim();
+
+  if (!trimmedGrade || trimmedGrade === UNKNOWN_GRADE_LABEL) {
+    return "";
+  }
+
+  return trimmedGrade;
+}
+
+function getEditableGradeValue(grade: string) {
+  return getVisibleGrade(grade);
+}
+
+function formatZoneLabel(name: string, grade: string, separator = " · ") {
+  const visibleGrade = getVisibleGrade(grade);
+
+  if (!visibleGrade) {
+    return name;
+  }
+
+  return `${name}${separator}${visibleGrade}`;
+}
+
+function getDefaultCreatedZoneBbox(zoneCount: number): BoundingBox {
+  const column = zoneCount % 4;
+  const row = Math.floor(zoneCount / 4) % 4;
+
+  return {
+    x: 0.34 + column * 0.07,
+    y: 0.34 + row * 0.06,
+    width: CREATED_ZONE_WIDTH,
+    height: CREATED_ZONE_HEIGHT,
+  };
+}
+
 export function SeatMapAnalysisPanel({
   seatMap,
   mode,
@@ -170,6 +215,7 @@ export function SeatMapAnalysisPanel({
     null,
   );
   const [isMutating, setIsMutating] = useState(false);
+  const [isCreatingZone, setIsCreatingZone] = useState(false);
   const [isGeneratingSeats, setIsGeneratingSeats] = useState(false);
   const [totalSeatCount, setTotalSeatCount] = useState(
     seatMap.totalSeatCount ? String(seatMap.totalSeatCount) : "",
@@ -187,9 +233,18 @@ export function SeatMapAnalysisPanel({
   );
   const [draggingPolygon, setDraggingPolygon] =
     useState<PolygonDragState | null>(null);
+  const [optimisticZones, setOptimisticZones] = useState<SeatMapZone[]>([]);
+  const zoneSources = useMemo(() => {
+    const seatMapZoneIds = new Set(seatMap.zones.map((zone) => zone.id));
+
+    return [
+      ...seatMap.zones,
+      ...optimisticZones.filter((zone) => !seatMapZoneIds.has(zone.id)),
+    ];
+  }, [optimisticZones, seatMap.zones]);
   const zones = useMemo(
     () =>
-      seatMap.zones
+      zoneSources
         .map((zone) => {
           const bbox = parseBbox(zone.bbox);
           const parsedPolygon = parsePolygon(zone.polygon);
@@ -211,7 +266,7 @@ export function SeatMapAnalysisPanel({
           };
         })
         .filter((zone): zone is AnalyzedSeatMapZone => Boolean(zone.bbox)),
-    [seatMap.zones],
+    [zoneSources],
   );
   const selectedZone = zones.find((zone) => zone.id === selectedZoneId) ?? null;
   const minimumSeatCount = zones.length;
@@ -277,7 +332,7 @@ export function SeatMapAnalysisPanel({
 
     setSelectedZoneId(zone.id);
     setName(zone.name);
-    setGrade(zone.grade);
+    setGrade(getEditableGradeValue(zone.grade));
     setIsEditingPolygon(false);
     setEditablePolygon([]);
     setSelectedPointIndex(null);
@@ -320,7 +375,7 @@ export function SeatMapAnalysisPanel({
     setSelectedPointIndex(null);
     setDraggingPointIndex(null);
     setDraggingPolygon(null);
-    setMessage("bbox 기준 사각형 외곽선으로 초기화했습니다.");
+    setMessage("외곽선을 초기화했습니다.");
   }
 
   function addPolygonPoint() {
@@ -569,7 +624,7 @@ export function SeatMapAnalysisPanel({
     }
 
     const trimmedName = name.trim();
-    const trimmedGrade = grade.trim() || "미확인";
+    const trimmedGrade = grade.trim() || UNKNOWN_GRADE_LABEL;
 
     if (!trimmedName) {
       setMessage("구역명을 입력해주세요.");
@@ -614,6 +669,23 @@ export function SeatMapAnalysisPanel({
           ? "좌석 구역 정보를 저장했습니다. 외곽선을 수정했으므로 전체 좌석 수를 다시 입력해 좌석 데이터를 생성해주세요."
           : "좌석 구역 정보를 저장했습니다.",
       );
+      setOptimisticZones((currentZones) =>
+        currentZones.map((zone) =>
+          zone.id === selectedZone.id
+            ? {
+                ...zone,
+                name: trimmedName,
+                grade: trimmedGrade,
+                allocatedSeatCount: isEditingPolygon
+                  ? null
+                  : zone.allocatedSeatCount,
+                polygon: isEditingPolygon
+                  ? normalizePolygon(editablePolygon)
+                  : zone.polygon,
+              }
+            : zone,
+        ),
+      );
       setIsEditingPolygon(false);
       setEditablePolygon([]);
       setSelectedPointIndex(null);
@@ -628,6 +700,73 @@ export function SeatMapAnalysisPanel({
       );
     } finally {
       setIsMutating(false);
+    }
+  }
+
+  async function handleCreateZone() {
+    if (!isEditMode) {
+      return;
+    }
+
+    if (isEditingPolygon) {
+      const confirmed = window.confirm(
+        "외곽선 편집 중인 내용이 저장되지 않았습니다. 새 구역을 추가할까요?",
+      );
+
+      if (!confirmed) {
+        return;
+      }
+    }
+
+    const bbox = getDefaultCreatedZoneBbox(zones.length);
+    const newZoneName = `새 구역 ${zones.length + 1}`;
+
+    setIsCreatingZone(true);
+    setMessage("");
+
+    try {
+      const response = await fetch(`/api/seat-maps/${seatMap.id}/seat-zones`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: newZoneName,
+          grade: UNKNOWN_GRADE_LABEL,
+          bbox,
+        }),
+      });
+      const payload = (await response.json()) as ZoneCreateResponse;
+
+      if (!response.ok) {
+        throw new Error(
+          payload.error?.message ?? "좌석 구역 생성에 실패했습니다.",
+        );
+      }
+
+      const createdZone = payload.data?.seatZone;
+
+      if (!createdZone) {
+        throw new Error("생성된 좌석 구역 정보를 불러오지 못했습니다.");
+      }
+
+      setOptimisticZones((currentZones) => [...currentZones, createdZone]);
+      setSelectedZoneId(createdZone.id);
+      setName(createdZone.name);
+      setGrade(getEditableGradeValue(createdZone.grade));
+      cancelPolygonEdit();
+      setMessage(
+        "새 구역을 추가했습니다. 외곽선을 수정한 뒤 저장하고 전체 좌석 수를 다시 입력해주세요.",
+      );
+      router.refresh();
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "좌석 구역 생성에 실패했습니다.",
+      );
+    } finally {
+      setIsCreatingZone(false);
     }
   }
 
@@ -732,6 +871,9 @@ export function SeatMapAnalysisPanel({
       setSelectedZoneId(null);
       setName("");
       setGrade("");
+      setOptimisticZones((currentZones) =>
+        currentZones.filter((zone) => zone.id !== selectedZone.id),
+      );
       cancelPolygonEdit();
       setMessage("좌석 구역을 삭제했습니다.");
       router.refresh();
@@ -762,7 +904,7 @@ export function SeatMapAnalysisPanel({
               <h3 className="font-semibold">선택 구역 수정</h3>
               {selectedZone ? (
                 <p className="mt-1 text-sm text-muted-foreground">
-                  {selectedZone.name} · {selectedZone.grade}
+                  {formatZoneLabel(name.trim() || selectedZone.name, grade)}
                 </p>
               ) : null}
             </div>
@@ -777,9 +919,7 @@ export function SeatMapAnalysisPanel({
 
           {selectedZone?.needsGeometryReview ? (
             <p className="mt-3 rounded-md border border-amber-300 bg-amber-100 px-3 py-2 text-xs text-amber-900">
-              이 구역은 정밀 외곽선이 없어 bbox 기준 사각형으로 표시되고
-              있습니다. 외곽선을 수정해 저장하면 티켓팅 연습과 리뷰에
-              반영됩니다.
+              외곽선을 수정해 저장하면 티켓팅 연습과 리뷰에 반영됩니다.
             </p>
           ) : null}
 
@@ -801,7 +941,7 @@ export function SeatMapAnalysisPanel({
                 className="rounded-md border bg-background px-3 py-2 text-sm"
                 value={grade}
                 maxLength={30}
-                placeholder="미확인, VIP, R, S, A"
+                placeholder="VIP, R, S, A"
                 onChange={(event) => setGrade(event.target.value)}
                 disabled={!selectedZone || isMutating}
               />
@@ -870,7 +1010,7 @@ export function SeatMapAnalysisPanel({
                     disabled={isMutating}
                   >
                     <RotateCcw className="h-4 w-4" aria-hidden="true" />
-                    bbox로 초기화
+                    초기화
                   </Button>
                 </div>
                 <p className="text-xs text-muted-foreground">
@@ -880,13 +1020,12 @@ export function SeatMapAnalysisPanel({
                     : ""}
                 </p>
               </div>
-            ) : (
+            ) : selectedZone?.polygon ? (
               <p className="mt-3 text-xs text-muted-foreground">
-                {selectedZone?.polygon
-                  ? `${selectedZone.polygon.length}개 점으로 저장된 외곽선을 사용 중입니다.`
-                  : "정밀 외곽선이 없어 bbox 기준 사각형을 사용 중입니다."}
+                {selectedZone.polygon.length}개 점으로 저장된 외곽선을 사용
+                중입니다.
               </p>
-            )}
+            ) : null}
           </div>
 
           <div className="mt-4 grid gap-2 sm:grid-cols-2">
@@ -950,13 +1089,31 @@ export function SeatMapAnalysisPanel({
               ? "AI 좌석 구역 분석 중"
               : getAnalyzeButtonText(seatMap.analysisStatus)}
           </Button>
-        ) : analysisHref ? (
-          <Button asChild variant="outline">
-            <Link href={analysisHref}>
-              <WandSparkles className="h-4 w-4" aria-hidden="true" />
-              AI 분석으로 돌아가기
-            </Link>
-          </Button>
+        ) : isEditMode ? (
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              onClick={() => {
+                void handleCreateZone();
+              }}
+              disabled={isCreatingZone || isMutating || isGeneratingSeats}
+            >
+              {isCreatingZone ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Plus className="h-4 w-4" aria-hidden="true" />
+              )}
+              구역 추가
+            </Button>
+            {analysisHref ? (
+              <Button asChild variant="outline">
+                <Link href={analysisHref}>
+                  <WandSparkles className="h-4 w-4" aria-hidden="true" />
+                  AI 분석으로 돌아가기
+                </Link>
+              </Button>
+            ) : null}
+          </div>
         ) : null}
       </div>
 
@@ -1128,6 +1285,14 @@ export function SeatMapAnalysisPanel({
                   isSelected && isEditingPolygon && editablePolygon.length >= 3
                     ? editablePolygon
                     : zone.polygon;
+                const zoneLabel = formatZoneLabel(
+                  isSelected ? name.trim() || zone.name : zone.name,
+                  isSelected ? grade : zone.grade,
+                  " ",
+                );
+                const zoneTitle = zone.needsGeometryReview
+                  ? `${zoneLabel} - 외곽선 확인 필요`
+                  : zoneLabel;
 
                 return (
                   <g
@@ -1150,7 +1315,7 @@ export function SeatMapAnalysisPanel({
                     role="button"
                     tabIndex={isLockedDuringPolygonEdit ? -1 : 0}
                     aria-disabled={isLockedDuringPolygonEdit}
-                    aria-label={`${zone.name} ${zone.grade}`}
+                    aria-label={zoneLabel}
                     onClick={() => {
                       if (isSelected && isEditingPolygon) {
                         return;
@@ -1165,9 +1330,7 @@ export function SeatMapAnalysisPanel({
                       }
                     }}
                   >
-                    <title>
-                      {`${zone.name} ${zone.grade}${zone.needsGeometryReview ? " - 외곽선 확인 필요" : ""}`}
-                    </title>
+                    <title>{zoneTitle}</title>
                     {points ? (
                       <polygon
                         onPointerDown={(event) =>
@@ -1232,6 +1395,13 @@ export function SeatMapAnalysisPanel({
 
             {zones.map((zone) => {
               const isSelected = selectedZone?.id === zone.id;
+              const zoneLabel = formatZoneLabel(
+                isSelected ? name.trim() || zone.name : zone.name,
+                isSelected ? grade : zone.grade,
+              );
+              const zoneTitle = zone.needsGeometryReview
+                ? `${zoneLabel} - 외곽선 확인 필요`
+                : zoneLabel;
 
               if (isAnalysisMode || (isEditingPolygon && !isSelected)) {
                 return null;
@@ -1241,11 +1411,7 @@ export function SeatMapAnalysisPanel({
                 <button
                   key={`${zone.id}-label`}
                   type="button"
-                  title={
-                    zone.needsGeometryReview
-                      ? `${zone.name} ${zone.grade} - 외곽선 확인 필요`
-                      : `${zone.name} ${zone.grade}`
-                  }
+                  title={zoneTitle}
                   className={[
                     "absolute z-10 max-w-40 rounded-md border bg-background/95 px-2 py-1 text-left text-[11px] font-medium shadow-sm transition",
                     isEditingPolygon ? "pointer-events-none opacity-80" : "",
@@ -1264,9 +1430,7 @@ export function SeatMapAnalysisPanel({
                   }}
                   onClick={() => selectZone(zone)}
                 >
-                  <span className="block truncate">
-                    {zone.name} · {zone.grade}
-                  </span>
+                  <span className="block truncate">{zoneLabel}</span>
                   {zone.needsGeometryReview ? (
                     <span className="block truncate text-amber-700">
                       확인 필요
@@ -1283,7 +1447,8 @@ export function SeatMapAnalysisPanel({
 
       {zones.length === 0 && isEditMode ? (
         <p className="mt-4 text-sm text-muted-foreground">
-          수정할 구역이 없습니다. AI 분석 페이지에서 구역을 먼저 추출해주세요.
+          수정할 구역이 없습니다. 구역 추가를 눌러 직접 구역을 만들 수
+          있습니다.
         </p>
       ) : null}
 
