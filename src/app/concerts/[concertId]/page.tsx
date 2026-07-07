@@ -3,7 +3,6 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { z } from "zod";
 import {
-  ArrowRight,
   CalendarDays,
   ChevronRight,
   ExternalLink,
@@ -103,6 +102,9 @@ export default async function ConcertDetailPage({
   const isSeatMapAnalyzed =
     concert.latestSeatMap?.analysisStatus === "success" &&
     concert.latestSeatMap.zoneCount > 0;
+  const practiceHref = concert.hasSeatMap
+    ? `/practice?concertId=${concert.id}`
+    : `/concerts/${concert.id}/seat-map`;
   const concertDateRange = formatDateRange(concert.startDate, concert.endDate);
   const infoRows = [
     {
@@ -226,7 +228,7 @@ export default async function ConcertDetailPage({
             description="공연장의 좌석 배치도를 등록하고 AI 분석 결과를 확인하세요."
           />
           <ActionCard
-            href={`/practice?concertId=${concert.id}`}
+            href={practiceHref}
             icon={<PlayCircle className="h-8 w-8" aria-hidden="true" />}
             title="티켓팅 연습"
             description="사이트별 예매 흐름과 좌석 선택 과정을 실전처럼 연습하세요."
@@ -250,15 +252,6 @@ export default async function ConcertDetailPage({
               </p>
             </div>
           </div>
-
-          {!concert.latestSeatMap ? (
-            <Button asChild className="w-full" size="lg">
-              <Link href={`/concerts/${concert.id}/seat-map`}>
-                배치도 업로드하기
-                <ArrowRight className="h-4 w-4" aria-hidden="true" />
-              </Link>
-            </Button>
-          ) : null}
         </aside>
       </section>
     </main>

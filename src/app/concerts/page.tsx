@@ -5,7 +5,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Grid3X3,
-  Heart,
   Info,
   List,
   MapPin,
@@ -135,13 +134,7 @@ function getConcertPageHref(
   return `/concerts?${params.toString()}`;
 }
 
-function ConcertPoster({
-  src,
-  title,
-}: {
-  src: string | null;
-  title: string;
-}) {
+function ConcertPoster({ src, title }: { src: string | null; title: string }) {
   return (
     <div className="relative aspect-[16/10] w-full overflow-hidden bg-secondary">
       {src ? (
@@ -185,11 +178,16 @@ export default async function ConcertListPage({
       scope,
     }),
   ]);
-  const hasActiveFilters = Boolean(filters.q || filters.region || filters.genre);
+  const hasActiveFilters = Boolean(
+    filters.q || filters.region || filters.genre,
+  );
   const resetHref = getConcertScopeHref(scope, {});
   const countLabel = hasActiveFilters ? "검색 결과" : "등록된 공연";
   const totalConcertCount = concerts.length;
-  const totalPages = Math.max(1, Math.ceil(totalConcertCount / CONCERT_PAGE_SIZE));
+  const totalPages = Math.max(
+    1,
+    Math.ceil(totalConcertCount / CONCERT_PAGE_SIZE),
+  );
   const page = Math.min(requestedPage, totalPages);
   const visibleConcerts = concerts.slice(
     (page - 1) * CONCERT_PAGE_SIZE,
@@ -197,7 +195,10 @@ export default async function ConcertListPage({
   );
   const firstConcertNumber =
     totalConcertCount === 0 ? 0 : (page - 1) * CONCERT_PAGE_SIZE + 1;
-  const lastConcertNumber = Math.min(page * CONCERT_PAGE_SIZE, totalConcertCount);
+  const lastConcertNumber = Math.min(
+    page * CONCERT_PAGE_SIZE,
+    totalConcertCount,
+  );
   const emptyTitle = hasActiveFilters
     ? "검색 결과가 없습니다"
     : "등록된 공연이 없습니다";
@@ -317,10 +318,20 @@ export default async function ConcertListPage({
           ))}
         </div>
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Button type="button" variant="outline" size="icon" aria-label="카드 보기">
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            aria-label="카드 보기"
+          >
             <Grid3X3 className="h-4 w-4" aria-hidden="true" />
           </Button>
-          <Button type="button" variant="ghost" size="icon" aria-label="목록 보기">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label="목록 보기"
+          >
             <List className="h-4 w-4" aria-hidden="true" />
           </Button>
         </div>
@@ -330,8 +341,8 @@ export default async function ConcertListPage({
         <h2 className="text-lg font-black">
           {filters.q ? (
             <>
-              <span className="text-primary">&apos;{filters.q}&apos;</span>{" "}
-              검색 결과
+              <span className="text-primary">&apos;{filters.q}&apos;</span> 검색
+              결과
             </>
           ) : (
             countLabel
@@ -367,15 +378,6 @@ export default async function ConcertListPage({
                 <span className="absolute left-3 top-3 rounded-md bg-primary px-2.5 py-1 text-xs font-bold text-primary-foreground">
                   {concert.hasSeatMap ? "배치도 등록" : "예정"}
                 </span>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  aria-label="관심 공연"
-                  className="absolute right-3 top-3 rounded-full bg-background/80 text-foreground shadow-sm backdrop-blur"
-                >
-                  <Heart className="h-4 w-4" aria-hidden="true" />
-                </Button>
               </div>
 
               <div className="space-y-4 p-4">
@@ -420,7 +422,10 @@ export default async function ConcertListPage({
                   </Button>
                   <Button asChild variant="outline" size="sm">
                     <Link href={`/reviews?concertId=${concert.id}`}>
-                      <MessageSquare className="h-3.5 w-3.5" aria-hidden="true" />
+                      <MessageSquare
+                        className="h-3.5 w-3.5"
+                        aria-hidden="true"
+                      />
                       좌석 리뷰
                     </Link>
                   </Button>
