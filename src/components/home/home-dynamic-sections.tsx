@@ -262,7 +262,7 @@ export function HomeDynamicSections() {
               homeData.recentReviews.map((review) => (
                 <Link
                   key={review.id}
-                  href={`/concerts/${review.concert.id}/reviews`}
+                  href={`/reviews/${review.id}`}
                   className="flex items-center justify-between gap-4 rounded-md border bg-background px-4 py-3 transition hover:border-primary/50"
                 >
                   <div className="min-w-0">

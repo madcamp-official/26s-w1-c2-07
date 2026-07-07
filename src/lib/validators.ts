@@ -4,6 +4,7 @@ import {
   ACTIVE_TICKET_TEMPLATE_TYPES,
   PRACTICE_DIFFICULTIES,
 } from "@/lib/practice";
+import { REVIEW_REPORT_REASONS } from "@/lib/review-reports";
 
 export const reviewSchema = z.object({
   zoneId: z.string().uuid(),
@@ -26,6 +27,16 @@ const reviewBaseSchema = z.object({
 export const reviewCreateSchema = reviewBaseSchema;
 
 export const reviewUpdateSchema = reviewBaseSchema;
+
+export const reviewReportCreateSchema = z.object({
+  reason: z.enum(REVIEW_REPORT_REASONS),
+  details: z
+    .string()
+    .trim()
+    .max(500)
+    .optional()
+    .transform((value) => (value ? value : null)),
+});
 
 export const REVIEW_SEAT_FLOORS = [
   "floor",

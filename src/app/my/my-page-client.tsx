@@ -514,7 +514,7 @@ function ReviewList({
               </div>
               <div className="flex shrink-0 flex-wrap gap-2">
                 <Button asChild variant="outline" size="sm">
-                  <Link href={`/concerts/${review.concert.id}/reviews`}>
+                  <Link href={`/reviews/${review.id}`}>
                     <ExternalLink className="h-4 w-4" aria-hidden="true" />
                     보기
                   </Link>

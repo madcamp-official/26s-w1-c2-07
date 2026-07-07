@@ -51,6 +51,7 @@ model Profile {
   createdAt        DateTime          @default(now())
   seatMaps         SeatMap[]         @relation("SeatMapCreatedBy")
   reviews          Review[]
+  reviewReports    ReviewReport[]    @relation("ReviewReportReporter")
   practiceSessions PracticeSession[]
 }
 
@@ -176,10 +177,26 @@ model Review {
   user              Profile   @relation(fields: [userId], references: [id], onDelete: Cascade)
   concert           Concert   @relation(fields: [concertId], references: [id], onDelete: Cascade)
   zone              SeatZone? @relation(fields: [zoneId], references: [id], onDelete: SetNull)
+  reports           ReviewReport[]
 
   @@index([userId])
   @@index([concertId])
   @@index([zoneId])
+}
+
+model ReviewReport {
+  id         String   @id @default(uuid()) @db.Uuid
+  reviewId   String   @db.Uuid
+  reporterId String   @db.Uuid
+  reason     String
+  details    String?
+  createdAt  DateTime @default(now())
+  review     Review   @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  reporter   Profile  @relation("ReviewReportReporter", fields: [reporterId], references: [id], onDelete: Cascade)
+
+  @@unique([reviewId, reporterId])
+  @@index([reviewId])
+  @@index([reporterId])
 }
 
 model PracticeSession {

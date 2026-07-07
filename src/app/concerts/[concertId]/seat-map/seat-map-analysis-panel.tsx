@@ -908,20 +908,7 @@ export function SeatMapAnalysisPanel({
                 </p>
               ) : null}
             </div>
-            {selectedZone &&
-            (isLowConfidence(selectedZone.confidence) ||
-              selectedZone.needsGeometryReview) ? (
-              <span className="shrink-0 rounded-md border border-amber-300 bg-amber-100 px-2 py-1 text-xs text-amber-900">
-                확인 필요
-              </span>
-            ) : null}
           </div>
-
-          {selectedZone?.needsGeometryReview ? (
-            <p className="mt-3 rounded-md border border-amber-300 bg-amber-100 px-3 py-2 text-xs text-amber-900">
-              외곽선을 수정해 저장하면 티켓팅 연습과 리뷰에 반영됩니다.
-            </p>
-          ) : null}
 
           <div className="mt-4 grid gap-3">
             <label className="grid gap-1.5 text-sm font-medium">
@@ -1290,9 +1277,6 @@ export function SeatMapAnalysisPanel({
                   isSelected ? grade : zone.grade,
                   " ",
                 );
-                const zoneTitle = zone.needsGeometryReview
-                  ? `${zoneLabel} - 외곽선 확인 필요`
-                  : zoneLabel;
 
                 return (
                   <g
@@ -1330,7 +1314,7 @@ export function SeatMapAnalysisPanel({
                       }
                     }}
                   >
-                    <title>{zoneTitle}</title>
+                    <title>{zoneLabel}</title>
                     {points ? (
                       <polygon
                         onPointerDown={(event) =>
@@ -1399,9 +1383,6 @@ export function SeatMapAnalysisPanel({
                 isSelected ? name.trim() || zone.name : zone.name,
                 isSelected ? grade : zone.grade,
               );
-              const zoneTitle = zone.needsGeometryReview
-                ? `${zoneLabel} - 외곽선 확인 필요`
-                : zoneLabel;
 
               if (isAnalysisMode || (isEditingPolygon && !isSelected)) {
                 return null;
@@ -1411,7 +1392,7 @@ export function SeatMapAnalysisPanel({
                 <button
                   key={`${zone.id}-label`}
                   type="button"
-                  title={zoneTitle}
+                  title={zoneLabel}
                   className={[
                     "absolute z-10 max-w-40 rounded-md border bg-background/95 px-2 py-1 text-left text-[11px] font-medium shadow-sm transition",
                     isEditingPolygon ? "pointer-events-none opacity-80" : "",
@@ -1431,11 +1412,6 @@ export function SeatMapAnalysisPanel({
                   onClick={() => selectZone(zone)}
                 >
                   <span className="block truncate">{zoneLabel}</span>
-                  {zone.needsGeometryReview ? (
-                    <span className="block truncate text-amber-700">
-                      확인 필요
-                    </span>
-                  ) : null}
                 </button>
               );
             })}
