@@ -4,6 +4,7 @@ import { ArrowLeft, Star } from "lucide-react";
 import { z } from "zod";
 
 import { ReviewImageGallery } from "@/app/reviews/[reviewId]/review-image-gallery";
+import { ReviewReportForm } from "@/app/reviews/[reviewId]/review-report-form";
 import { Button } from "@/components/ui/button";
 import { prisma } from "@/lib/prisma";
 import { formatSeatCode } from "@/utils/format";
@@ -245,6 +246,8 @@ export default async function ReviewDetailPage({
             <ReviewImageGallery imageUrls={imageUrls} />
           </aside>
         </div>
+
+        <ReviewReportForm reviewId={review.id} />
       </article>
     </main>
   );

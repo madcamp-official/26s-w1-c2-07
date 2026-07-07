@@ -2325,15 +2325,12 @@ export function PracticeClient({
           ? zoneOverlays.map((zone) => {
               const visibleGrade = getVisibleZoneGrade(zone.grade);
               const zoneLabel = formatSeatZoneLabel(zone.name, zone.grade, " ");
-              const zoneTitle = zone.polygon
-                ? zoneLabel
-                : `${zoneLabel} - 외곽선 확인 필요`;
 
               return zone.labelPoint ? (
                 <button
                   key={`${zone.id}-label`}
                   type="button"
-                  title={zoneTitle}
+                  title={zoneLabel}
                   className={[
                     "absolute z-10 max-w-36 rounded-md border bg-background/95 px-2 py-1 text-left text-[11px] font-medium shadow-sm transition",
                     selectedZone?.id === zone.id && zone.polygon
@@ -2355,11 +2352,6 @@ export function PracticeClient({
                   {visibleGrade ? (
                     <span className="block truncate text-muted-foreground">
                       {visibleGrade}
-                    </span>
-                  ) : null}
-                  {!zone.polygon ? (
-                    <span className="block truncate text-amber-700">
-                      확인 필요
                     </span>
                   ) : null}
                 </button>
@@ -3392,15 +3384,12 @@ export function PracticeClient({
                               zone.grade,
                               " ",
                             );
-                            const zoneTitle = zone.polygon
-                              ? zoneLabel
-                              : `${zoneLabel} - 외곽선 확인 필요`;
 
                             return zone.labelPoint ? (
                               <button
                                 key={`${zone.id}-label`}
                                 type="button"
-                                title={zoneTitle}
+                                title={zoneLabel}
                                 className={[
                                   "absolute z-10 max-w-36 rounded-md border bg-background/95 px-2 py-1 text-left text-[11px] font-medium shadow-sm transition",
                                   selectedZone?.id === zone.id && zone.polygon
@@ -3424,11 +3413,6 @@ export function PracticeClient({
                                 {visibleGrade ? (
                                   <span className="block truncate text-muted-foreground">
                                     {visibleGrade}
-                                  </span>
-                                ) : null}
-                                {!zone.polygon ? (
-                                  <span className="block truncate text-amber-700">
-                                    확인 필요
                                   </span>
                                 ) : null}
                               </button>
@@ -3463,11 +3447,6 @@ export function PracticeClient({
                                 }
                                 석 / 전체 {zone.virtualSeats.length}석
                               </span>
-                              {!zone.polygon ? (
-                                <span className="mt-1 block text-xs text-amber-700">
-                                  외곽선 확인 필요
-                                </span>
-                              ) : null}
                             </button>
                           ))}
                         </div>
