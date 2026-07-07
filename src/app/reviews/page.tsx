@@ -59,11 +59,11 @@ function ReviewConcertCard({
     <Link
       href={href}
       className={cn(
-        "group grid grid-cols-[76px_minmax(0,1fr)_18px] gap-3 rounded-lg border bg-background p-3 shadow-sm transition hover:border-primary/60",
+        "group grid h-[148px] grid-cols-[76px_minmax(0,1fr)_18px] gap-3 overflow-hidden rounded-lg border bg-background p-3 shadow-sm transition hover:border-primary/60",
         selected && "border-primary bg-primary/5 ring-1 ring-primary/30",
       )}
     >
-      <div className="relative aspect-square w-full overflow-hidden rounded-md border bg-secondary">
+      <div className="relative h-[76px] w-[76px] overflow-hidden rounded-md border bg-secondary">
         {concert.posterImageUrl ? (
           <Image
             src={concert.posterImageUrl}
@@ -206,7 +206,7 @@ export default async function ReviewsHubPage({
                 </span>
               </div>
 
-              <div className="mt-4 max-h-[calc(100vh-260px)] space-y-3 overflow-y-auto pr-1">
+              <div className="mt-4 max-h-[468px] space-y-3 overflow-y-auto overscroll-contain pr-1">
                 {concerts.map((concert) => (
                   <ReviewConcertCard
                     key={concert.id}

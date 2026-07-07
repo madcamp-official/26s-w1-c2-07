@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { formatDateRange } from "@/utils/format";
+import { formatDateRange, formatSeatCode } from "@/utils/format";
 
 type HomeConcert = {
   id: string;
@@ -68,9 +68,9 @@ function formatReviewSeat(review: HomeReview) {
     review.seatNumber
   ) {
     const floorLabel =
-      review.seatFloor === "floor" ? "floor층" : `${review.seatFloor}층`;
+      review.seatFloor === "floor" ? "Floor층" : `${review.seatFloor}층`;
 
-    return `${floorLabel} · ${review.seatSection}구역`;
+    return `${floorLabel} · ${formatSeatCode(review.seatSection)}구역`;
   }
 
   if (review.zone) {

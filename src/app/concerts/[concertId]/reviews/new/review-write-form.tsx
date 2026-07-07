@@ -32,7 +32,7 @@ type MutationResponse = {
 const FLOOR_OPTIONS = [
   {
     value: "floor",
-    label: "floor층",
+    label: "Floor층",
   },
   ...Array.from({ length: 10 }, (_, index) => {
     const floor = String(index + 1);
@@ -76,6 +76,7 @@ const DEFAULT_SCORES: ScoreState = {
 const REVIEW_IMAGE_MAX_FILE_COUNT = 5;
 const REVIEW_IMAGE_MAX_FILE_SIZE = 5 * 1024 * 1024;
 const REVIEW_IMAGE_ALLOWED_TYPES = ["image/png", "image/jpeg"];
+const SEAT_CODE_PATTERN = /^[A-Za-z0-9]+$/;
 
 function formatFileSize(bytes: number) {
   if (bytes >= 1024 * 1024) {
@@ -107,6 +108,10 @@ async function readMutationResponse(response: Response) {
 
 function getSectionPrefix(floor: string) {
   return floor === "floor" ? "f" : floor;
+}
+
+function sanitizeSeatCode(value: string) {
+  return value.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
 }
 
 export function ReviewWriteForm({ concertId }: ReviewWriteFormProps) {
@@ -229,15 +234,29 @@ export function ReviewWriteForm({ concertId }: ReviewWriteFormProps) {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    const trimmedSection = seatSection.trim();
-    const trimmedRow = seatRow.trim();
-    const trimmedNumber = seatNumber.trim();
+    const trimmedSection = seatSection.trim().toUpperCase();
+    const trimmedRow = seatRow.trim().toUpperCase();
+    const trimmedNumber = seatNumber.trim().toUpperCase();
     const trimmedContent = content.trim();
+
+    if (trimmedSection.length !== 3) {
+      setMessage("구역 이름은 3글자로 입력해주세요.");
+      return;
+    }
+
+    if (
+      !SEAT_CODE_PATTERN.test(trimmedSection) ||
+      !SEAT_CODE_PATTERN.test(trimmedRow) ||
+      !SEAT_CODE_PATTERN.test(trimmedNumber)
+    ) {
+      setMessage("구역, 행, 열은 영어와 숫자만 입력해주세요.");
+      return;
+    }
 
     if (!trimmedSection.toLowerCase().startsWith(sectionPrefix)) {
       setMessage(
         seatFloor === "floor"
-          ? "floor층 구역은 f로 시작해야 합니다."
+          ? "Floor층 구역은 F로 시작해야 합니다."
           : `${seatFloor}층 구역은 ${seatFloor}로 시작해야 합니다.`,
       );
       return;
@@ -321,9 +340,12 @@ export function ReviewWriteForm({ concertId }: ReviewWriteFormProps) {
             구역
             <input
               value={seatSection}
-              onChange={(event) => setSeatSection(event.target.value)}
+              maxLength={3}
+              onChange={(event) =>
+                setSeatSection(sanitizeSeatCode(event.target.value).slice(0, 3))
+              }
               className="h-11 rounded-md border bg-background px-3 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-ring"
-              placeholder={`${sectionPrefix.toUpperCase()}로 시작하는 구역`}
+              placeholder={`${sectionPrefix.toUpperCase()}로 시작하는 3글자 구역`}
             />
           </label>
 
@@ -331,7 +353,10 @@ export function ReviewWriteForm({ concertId }: ReviewWriteFormProps) {
             행
             <input
               value={seatRow}
-              onChange={(event) => setSeatRow(event.target.value)}
+              maxLength={20}
+              onChange={(event) =>
+                setSeatRow(sanitizeSeatCode(event.target.value))
+              }
               className="h-11 rounded-md border bg-background px-3 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-ring"
               placeholder="예: A, 3"
             />
@@ -341,7 +366,10 @@ export function ReviewWriteForm({ concertId }: ReviewWriteFormProps) {
             열
             <input
               value={seatNumber}
-              onChange={(event) => setSeatNumber(event.target.value)}
+              maxLength={20}
+              onChange={(event) =>
+                setSeatNumber(sanitizeSeatCode(event.target.value))
+              }
               className="h-11 rounded-md border bg-background px-3 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-ring"
               placeholder="예: 12"
             />

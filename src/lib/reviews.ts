@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { formatSeatCode } from "@/utils/format";
 
 export const REVIEW_PAGE_SIZE = 6;
 export const REVIEW_SORT_MODES = ["latest", "rating_desc"] as const;
@@ -66,7 +67,7 @@ function getReviewLocationKey(review: {
   } | null;
 }) {
   if (review.seatFloor && review.seatSection) {
-    return `manual:${review.seatFloor}:${review.seatSection}`;
+    return `manual:${review.seatFloor}:${formatSeatCode(review.seatSection)}`;
   }
 
   if (review.zone) {
@@ -74,6 +75,16 @@ function getReviewLocationKey(review: {
   }
 
   return "unknown";
+}
+
+function normalizeReviewLocationKey(value: string) {
+  const [type, floor, section] = value.split(":");
+
+  if (type === "manual" && floor && section) {
+    return `manual:${floor}:${formatSeatCode(section)}`;
+  }
+
+  return value;
 }
 
 function getReviewLocationLabel(review: {
@@ -86,9 +97,9 @@ function getReviewLocationLabel(review: {
 }) {
   if (review.seatFloor && review.seatSection) {
     const floorLabel =
-      review.seatFloor === "floor" ? "floor층" : `${review.seatFloor}층`;
+      review.seatFloor === "floor" ? "Floor층" : `${review.seatFloor}층`;
 
-    return `${floorLabel} · ${review.seatSection}`;
+    return `${floorLabel} · ${formatSeatCode(review.seatSection)}`;
   }
 
   if (review.zone) {
@@ -178,9 +189,12 @@ export async function getConcertReviewData(
   const zoneOptions = Array.from(zoneCounts.values()).sort((a, b) =>
     a.label.localeCompare(b.label, "ko-KR"),
   );
+  const requestedZoneId = options.zoneId
+    ? normalizeReviewLocationKey(options.zoneId)
+    : null;
   const selectedZoneId =
-    options.zoneId && zoneOptions.some((zone) => zone.id === options.zoneId)
-      ? options.zoneId
+    requestedZoneId && zoneOptions.some((zone) => zone.id === requestedZoneId)
+      ? requestedZoneId
       : null;
   const filteredReviews = selectedZoneId
     ? allReviews.filter((review) => getReviewLocationKey(review) === selectedZoneId)

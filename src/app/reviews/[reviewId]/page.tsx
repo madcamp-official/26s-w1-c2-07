@@ -6,6 +6,7 @@ import { z } from "zod";
 import { ReviewImageGallery } from "@/app/reviews/[reviewId]/review-image-gallery";
 import { Button } from "@/components/ui/button";
 import { prisma } from "@/lib/prisma";
+import { formatSeatCode } from "@/utils/format";
 
 const reviewIdSchema = z.string().uuid();
 
@@ -108,9 +109,11 @@ function formatSeatLocation(review: Awaited<ReturnType<typeof getReviewDetail>>)
     review.seatNumber
   ) {
     const floorLabel =
-      review.seatFloor === "floor" ? "floor층" : `${review.seatFloor}층`;
+      review.seatFloor === "floor" ? "Floor층" : `${review.seatFloor}층`;
 
-    return `${floorLabel} · ${review.seatSection}구역 · ${review.seatRow}행 · ${review.seatNumber}열`;
+    return `${floorLabel} · ${formatSeatCode(review.seatSection)}구역 · ${formatSeatCode(
+      review.seatRow,
+    )}행 · ${formatSeatCode(review.seatNumber)}열`;
   }
 
   if (review.zone) {

@@ -41,12 +41,26 @@ export const REVIEW_SEAT_FLOORS = [
   "10",
 ] as const;
 
+const seatCodeSchema = z
+  .string()
+  .trim()
+  .regex(/^[A-Za-z0-9]+$/, "구역, 행, 열은 영어와 숫자만 입력해주세요.");
+
+const seatSectionSchema = seatCodeSchema
+  .length(3, "구역 이름은 3글자로 입력해주세요.")
+  .transform((value) => value.toUpperCase());
+
+const seatRowOrNumberSchema = seatCodeSchema
+  .min(1)
+  .max(20)
+  .transform((value) => value.toUpperCase());
+
 export const reviewManualCreateSchema = reviewBaseSchema
   .extend({
     seatFloor: z.enum(REVIEW_SEAT_FLOORS),
-    seatSection: z.string().trim().min(1).max(30),
-    seatRow: z.string().trim().min(1).max(20),
-    seatNumber: z.string().trim().min(1).max(20),
+    seatSection: seatSectionSchema,
+    seatRow: seatRowOrNumberSchema,
+    seatNumber: seatRowOrNumberSchema,
   })
   .superRefine((value, context) => {
     const sectionPrefix = value.seatFloor === "floor" ? "f" : value.seatFloor;
@@ -57,7 +71,7 @@ export const reviewManualCreateSchema = reviewBaseSchema
         path: ["seatSection"],
         message:
           value.seatFloor === "floor"
-            ? "floor층 구역은 f로 시작해야 합니다."
+            ? "Floor층 구역은 F로 시작해야 합니다."
             : `${value.seatFloor}층 구역은 ${value.seatFloor}로 시작해야 합니다.`,
       });
     }
