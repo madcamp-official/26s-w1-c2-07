@@ -411,56 +411,55 @@ export async function createAreaProportionalVirtualSeatsForSeatMap(
   };
 }
 
-export async function ensureVirtualSeatsForSeatMap(seatMapId: string) {
-  return prisma.$transaction(async (tx) => {
-    const zones = await tx.seatZone.findMany({
-      where: {
-        seatMapId,
-      },
-      select: {
-        id: true,
-        bbox: true,
-        polygon: true,
-        allocatedSeatCount: true,
-        virtualSeatConfig: true,
-        _count: {
-          select: {
-            virtualSeats: true,
-          },
+export async function getVirtualSeatReadinessForSeatMap(seatMapId: string) {
+  const zones = await prisma.seatZone.findMany({
+    where: {
+      seatMapId,
+    },
+    select: {
+      id: true,
+      bbox: true,
+      polygon: true,
+      allocatedSeatCount: true,
+      virtualSeatConfig: true,
+      _count: {
+        select: {
+          virtualSeats: true,
         },
       },
-    });
-    const readinessResults = zones.map((zone) =>
-      getSeatZonePracticeReadiness(zone),
-    );
-    const zonesToRepair = zones.filter(
-      (_zone, index) => readinessResults[index]?.needsRepair,
-    );
-    const repairResult = await createVirtualSeatsForZones(tx, zonesToRepair, {
-      overwrite: true,
-    });
-    const missingGeometryZoneCount = readinessResults.filter(
-      (readiness) => !readiness.hasGeometry,
-    ).length;
-    const invalidSeatZoneCount = readinessResults.filter(
-      (readiness) => readiness.hasGeometry && !readiness.ready,
-    ).length;
-    const readyZoneCount =
-      readinessResults.filter((readiness) => readiness.ready).length +
-      repairResult.zoneCount;
-    const ready =
-      zones.length > 0 &&
-      missingGeometryZoneCount === 0 &&
-      readyZoneCount === zones.length;
-
-    return {
-      zoneCount: zones.length,
-      readyZoneCount,
-      repairedZoneCount: repairResult.zoneCount,
-      createdSeatCount: repairResult.seatCount,
-      missingGeometryZoneCount,
-      invalidSeatZoneCount,
-      ready,
-    } satisfies VirtualSeatEnsureResult;
+      virtualSeats: {
+        take: 1,
+        select: {
+          x: true,
+          y: true,
+        },
+      },
+    },
   });
+  const readinessResults = zones.map((zone) =>
+    getSeatZonePracticeReadiness(zone),
+  );
+  const missingGeometryZoneCount = readinessResults.filter(
+    (readiness) => !readiness.hasGeometry,
+  ).length;
+  const invalidSeatZoneCount = readinessResults.filter(
+    (readiness) => readiness.hasGeometry && !readiness.ready,
+  ).length;
+  const readyZoneCount = readinessResults.filter(
+    (readiness) => readiness.ready,
+  ).length;
+  const ready =
+    zones.length > 0 &&
+    missingGeometryZoneCount === 0 &&
+    readyZoneCount === zones.length;
+
+  return {
+    zoneCount: zones.length,
+    readyZoneCount,
+    repairedZoneCount: 0,
+    createdSeatCount: 0,
+    missingGeometryZoneCount,
+    invalidSeatZoneCount,
+    ready,
+  } satisfies VirtualSeatEnsureResult;
 }

@@ -7,7 +7,7 @@ import { PracticeClient } from "@/app/concerts/[concertId]/practice/practice-cli
 import { Button } from "@/components/ui/button";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { ensureVirtualSeatsForSeatMap } from "@/lib/virtual-seats";
+import { getVirtualSeatReadinessForSeatMap } from "@/lib/virtual-seats";
 
 const concertIdSchema = z.string().uuid();
 
@@ -103,42 +103,32 @@ export default async function PracticePage({ params }: PracticePageProps) {
     redirect(`/login?redirect=/concerts/${parsedConcertId.data}/practice`);
   }
 
-  let concert = await getPracticeConcert(parsedConcertId.data, user.id);
+  const concert = await getPracticeConcert(parsedConcertId.data, user.id);
 
   if (!concert) {
     notFound();
   }
 
-  let latestSeatMap = concert.seatMaps[0] ?? null;
-  let zones =
+  const latestSeatMap = concert.seatMaps[0] ?? null;
+  const zones =
     latestSeatMap?.zones.map((zone) => ({
       ...zone,
       virtualSeats: zone.virtualSeats,
     })) ?? [];
-  let hasZones = zones.length > 0;
+  const hasZones = zones.length > 0;
+  let hasPracticeSeats =
+    zones.length > 0 && zones.every((zone) => zone.virtualSeats.length > 0);
   let isPracticeReady = false;
 
   if (latestSeatMap && hasZones) {
-    const seatPreparation = await ensureVirtualSeatsForSeatMap(
+    const seatPreparation = await getVirtualSeatReadinessForSeatMap(
       latestSeatMap.id,
     );
-    concert = await getPracticeConcert(parsedConcertId.data, user.id);
-
-    if (!concert) {
-      notFound();
-    }
-
-    latestSeatMap = concert.seatMaps[0] ?? null;
-    zones =
-      latestSeatMap?.zones.map((zone) => ({
-        ...zone,
-        virtualSeats: zone.virtualSeats,
-      })) ?? [];
-    hasZones = zones.length > 0;
+    hasPracticeSeats = seatPreparation.ready;
     isPracticeReady =
       seatPreparation.ready &&
       zones.length > 0 &&
-      zones.every((zone) => zone.virtualSeats.length > 0);
+      hasPracticeSeats;
   }
 
   if (!latestSeatMap || !hasZones || !isPracticeReady) {
@@ -162,8 +152,8 @@ export default async function PracticePage({ params }: PracticePageProps) {
                 티켓팅 연습 준비가 필요합니다
               </h1>
               <p className="mt-3 text-sm leading-6 text-muted-foreground">
-                티켓팅 연습을 시작하려면 좌석 배치도 AI 분석이 먼저 완료되어야
-                합니다.
+                티켓팅 연습을 시작하려면 좌석 배치도 AI 분석을 완료한 뒤 전체
+                좌석 수를 입력해 좌석 데이터를 생성해야 합니다.
               </p>
             </div>
           </div>
@@ -172,7 +162,7 @@ export default async function PracticePage({ params }: PracticePageProps) {
             <p>
               좌석 배치도 분석: {latestSeatMap && hasZones ? "완료" : "필요"}
             </p>
-            <p>좌석 선택 화면: {isPracticeReady ? "준비됨" : "준비 필요"}</p>
+            <p>좌석 데이터: {hasPracticeSeats ? "준비됨" : "생성 필요"}</p>
           </div>
 
           <div className="mt-6 flex flex-wrap gap-2">
