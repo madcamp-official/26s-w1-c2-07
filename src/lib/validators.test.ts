@@ -4,6 +4,7 @@ import {
   practiceSessionCompleteSchema,
   practiceSessionCreateSchema,
   reviewCreateSchema,
+  reviewManualCreateSchema,
   seatZoneUpdateSchema,
 } from "@/lib/validators";
 
@@ -25,6 +26,66 @@ describe("validators", () => {
         distanceScore: 3,
         satisfactionScore: 5,
         content: "짧음",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("requires manual review section names to be exactly three characters", () => {
+    const validPayload = {
+      seatFloor: "floor",
+      seatSection: "f12",
+      seatRow: "A",
+      seatNumber: "12",
+      viewScore: 5,
+      soundScore: 4,
+      distanceScore: 3,
+      satisfactionScore: 5,
+      content: "시야와 음향이 모두 만족스러웠습니다.",
+    };
+
+    const parsedPayload = reviewManualCreateSchema.safeParse({
+      ...validPayload,
+      seatSection: "f12",
+      seatRow: "a",
+      seatNumber: "b12",
+    });
+
+    expect(parsedPayload.success).toBe(true);
+
+    if (parsedPayload.success) {
+      expect(parsedPayload.data.seatSection).toBe("F12");
+      expect(parsedPayload.data.seatRow).toBe("A");
+      expect(parsedPayload.data.seatNumber).toBe("B12");
+    }
+
+    expect(
+      reviewManualCreateSchema.safeParse({
+        ...validPayload,
+        seatSection: "f1",
+      }).success,
+    ).toBe(false);
+    expect(
+      reviewManualCreateSchema.safeParse({
+        ...validPayload,
+        seatSection: "f123",
+      }).success,
+    ).toBe(false);
+    expect(
+      reviewManualCreateSchema.safeParse({
+        ...validPayload,
+        seatSection: "f구역",
+      }).success,
+    ).toBe(false);
+    expect(
+      reviewManualCreateSchema.safeParse({
+        ...validPayload,
+        seatRow: "A-1",
+      }).success,
+    ).toBe(false);
+    expect(
+      reviewManualCreateSchema.safeParse({
+        ...validPayload,
+        seatNumber: "12열",
       }).success,
     ).toBe(false);
   });

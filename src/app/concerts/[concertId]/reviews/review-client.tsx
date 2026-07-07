@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, ListFilter, PencilLine, Star } from "lucide-
 
 import { Button } from "@/components/ui/button";
 import type { ReviewScoreField, ReviewSortMode } from "@/lib/reviews";
+import { formatSeatCode } from "@/utils/format";
 
 type ReviewUser = {
   id: string;
@@ -135,9 +136,11 @@ function formatSeatLocation(review: ReviewItem) {
     review.seatNumber
   ) {
     const floorLabel =
-      review.seatFloor === "floor" ? "floor층" : `${review.seatFloor}층`;
+      review.seatFloor === "floor" ? "Floor층" : `${review.seatFloor}층`;
 
-    return `${floorLabel} · ${review.seatSection}구역 · ${review.seatRow}행 · ${review.seatNumber}열`;
+    return `${floorLabel} · ${formatSeatCode(review.seatSection)}구역 · ${formatSeatCode(
+      review.seatRow,
+    )}행 · ${formatSeatCode(review.seatNumber)}열`;
   }
 
   if (review.zone) {

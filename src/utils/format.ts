@@ -35,3 +35,6 @@ export function formatPriceRange(priceMin: number, priceMax: number) {
   return `${formatter.format(priceMin)}원 - ${formatter.format(priceMax)}원`;
 }
 
+export function formatSeatCode(value: string) {
+  return value.trim().toUpperCase();
+}

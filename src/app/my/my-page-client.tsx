@@ -22,6 +22,7 @@ import {
   PRACTICE_DIFFICULTY_LABELS,
   PRACTICE_TEMPLATE_LABELS,
 } from "@/lib/practice";
+import { formatSeatCode } from "@/utils/format";
 import type {
   PracticeDifficulty,
   TicketTemplateType,
@@ -176,9 +177,11 @@ function formatReviewSeat(review: MyReview) {
     review.seatNumber
   ) {
     const floorLabel =
-      review.seatFloor === "floor" ? "floor층" : `${review.seatFloor}층`;
+      review.seatFloor === "floor" ? "Floor층" : `${review.seatFloor}층`;
 
-    return `${floorLabel} · ${review.seatSection}구역 · ${review.seatRow}행 · ${review.seatNumber}열`;
+    return `${floorLabel} · ${formatSeatCode(review.seatSection)}구역 · ${formatSeatCode(
+      review.seatRow,
+    )}행 · ${formatSeatCode(review.seatNumber)}열`;
   }
 
   if (review.zone) {
