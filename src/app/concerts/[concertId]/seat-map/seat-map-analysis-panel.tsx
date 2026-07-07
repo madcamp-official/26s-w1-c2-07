@@ -86,7 +86,6 @@ type SeatMapAnalysisPanelProps = {
 type AnalyzeResponse = {
   data?: {
     zoneCount?: number;
-    seatCount?: number;
   };
   error?: {
     message?: string;
@@ -612,7 +611,7 @@ export function SeatMapAnalysisPanel({
 
       setMessage(
         isEditingPolygon
-          ? "좌석 구역 정보와 좌석 선택 데이터를 저장했습니다."
+          ? "좌석 구역 정보를 저장했습니다. 외곽선을 수정했으므로 전체 좌석 수를 다시 입력해 좌석 데이터를 생성해주세요."
           : "좌석 구역 정보를 저장했습니다.",
       );
       setIsEditingPolygon(false);

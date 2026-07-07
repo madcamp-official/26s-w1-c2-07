@@ -10,7 +10,6 @@ import {
   aiSeatMapAnalysisSchema,
   normalizeSeatMapAnalysis,
 } from "@/lib/seat-zone-analysis";
-import { createVirtualSeatsForZones } from "@/lib/virtual-seats";
 
 export const runtime = "nodejs";
 
@@ -159,7 +158,7 @@ export async function POST(
       imprecisePolygonCount,
     };
 
-    const { updatedSeatMap, virtualSeatResult } = await prisma.$transaction(
+    const updatedSeatMap = await prisma.$transaction(
       async (tx) => {
         await tx.seatZone.deleteMany({
           where: {
@@ -179,29 +178,7 @@ export async function POST(
           })),
         });
 
-        const createdZones = await tx.seatZone.findMany({
-          where: {
-            seatMapId: seatMap.id,
-          },
-          select: {
-            id: true,
-            bbox: true,
-            polygon: true,
-            _count: {
-              select: {
-                virtualSeats: true,
-              },
-            },
-          },
-        });
-        const virtualSeatResult = await createVirtualSeatsForZones(
-          tx,
-          createdZones,
-          {
-            overwrite: true,
-          },
-        );
-        const updatedSeatMap = await tx.seatMap.update({
+        return tx.seatMap.update({
           where: {
             id: seatMap.id,
           },
@@ -218,18 +195,16 @@ export async function POST(
             },
           },
         });
-
-        return {
-          updatedSeatMap,
-          virtualSeatResult,
-        };
+      },
+      {
+        maxWait: 10_000,
+        timeout: 30_000,
       },
     );
 
     return apiData({
       seatMap: updatedSeatMap,
       zoneCount: zones.length,
-      seatCount: virtualSeatResult.seatCount,
     });
   } catch (error) {
     const message = getErrorMessage(error);
