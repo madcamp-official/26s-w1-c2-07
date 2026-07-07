@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ImageUp, Ticket } from "lucide-react";
+import { CalendarDays, ImageUp, MapPin, Ticket } from "lucide-react";
 
 import { PracticeWorkspaceClient } from "@/app/practice/practice-workspace-client";
 import { RegisteredConcertWorkspace } from "@/components/registered-concert-workspace";
@@ -9,8 +9,10 @@ import { getCurrentUser } from "@/lib/auth";
 import {
   getRegisteredConcertsForUser,
   getRegisteredPracticeConcert,
+  type RegisteredConcertSummary,
 } from "@/lib/registered-concerts";
 import { ensureVirtualSeatsForSeatMap } from "@/lib/virtual-seats";
+import { formatDateRange } from "@/utils/format";
 
 type PracticeHubPageProps = {
   searchParams?: Promise<{
@@ -26,6 +28,36 @@ function getSelectedConcertId(
     concerts.find((concert) => concert.id === requestedConcertId)?.id ??
     concerts[0]?.id ??
     null
+  );
+}
+
+function SelectedPracticeConcertInfo({
+  concert,
+}: {
+  concert: RegisteredConcertSummary;
+}) {
+  return (
+    <section className="h-full overflow-hidden rounded-lg border bg-card p-4 shadow-sm">
+      <div className="min-w-0">
+        <p className="text-xs font-bold text-primary">공연명</p>
+        <h2 className="mt-1.5 line-clamp-1 text-xl font-black leading-tight tracking-normal [word-break:keep-all]">
+          {concert.title}
+        </h2>
+      </div>
+
+      <div className="mt-3 space-y-1.5 text-sm text-muted-foreground">
+        <p className="flex min-w-0 items-center gap-2">
+          <MapPin className="h-4 w-4 shrink-0" aria-hidden="true" />
+          <span className="truncate">{concert.venueName}</span>
+        </p>
+        <p className="flex min-w-0 items-center gap-2">
+          <CalendarDays className="h-4 w-4 shrink-0" aria-hidden="true" />
+          <span className="truncate">
+            {formatDateRange(concert.startDate, concert.endDate)}
+          </span>
+        </p>
+      </div>
+    </section>
   );
 }
 
@@ -100,7 +132,7 @@ function RegisteredSeatMapPreview({
   seatMap: PracticePreviewSeatMap | null;
 }) {
   return (
-    <section className="rounded-lg border bg-card p-5 shadow-sm">
+    <section className="min-h-0 rounded-lg border bg-card p-4 shadow-sm xl:flex xl:h-full xl:flex-col">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm leading-6 text-muted-foreground">
           선택한 공연에 등록된 좌석 배치도를 확인합니다.
@@ -114,19 +146,19 @@ function RegisteredSeatMapPreview({
 
       {seatMap ? (
         <>
-          <div className="mt-5 overflow-hidden rounded-lg border bg-secondary">
-            <div className="relative bg-background">
+          <div className="mt-4 max-h-[240px] overflow-auto rounded-lg border bg-secondary xl:min-h-0 xl:flex-1 xl:max-h-none">
+            <div className="relative flex min-h-full items-center justify-center bg-background">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={seatMap.imageUrl}
                 alt="등록한 좌석 배치도"
-                className="block h-auto w-full"
+                className="block h-auto max-h-[240px] w-full object-contain xl:max-h-full"
               />
             </div>
           </div>
         </>
       ) : (
-        <div className="mt-5 rounded-lg border bg-secondary px-5 py-12 text-center text-sm text-muted-foreground">
+        <div className="mt-4 rounded-lg border bg-secondary px-5 py-12 text-center text-sm text-muted-foreground xl:flex-1">
           등록된 좌석 배치도를 찾지 못했습니다.
         </div>
       )}
@@ -196,6 +228,7 @@ export default async function PracticeHubPage({
       showTip={false}
       concerts={registeredConcerts}
       selectedConcertId={selectedConcertId}
+      sidebarListSize="three"
       emptyTitle="아직 등록한 좌석 배치도가 없습니다"
       emptyDescription="공연을 선택하고 좌석 배치도를 등록하면 티켓팅 연습을 시작할 수 있습니다."
     >
@@ -210,6 +243,10 @@ export default async function PracticeHubPage({
               region: selectedConcert.region,
               priceMin: selectedConcert.priceMin,
               priceMax: selectedConcert.priceMax,
+              dateLabel: formatDateRange(
+                selectedConcertSummary.startDate,
+                selectedConcertSummary.endDate,
+              ),
             }}
             schedules={selectedConcert.schedules.map((schedule) => ({
               id: schedule.id,
@@ -244,10 +281,14 @@ export default async function PracticeHubPage({
             }))}
           />
         ) : (
-          <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_400px]">
-            <RegisteredSeatMapPreview
-              seatMap={selectedConcertSummary.latestSeatMap}
-            />
+          <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_400px] xl:items-stretch">
+            <div className="grid gap-4 xl:h-full xl:min-h-0 xl:grid-rows-[164px_minmax(0,1fr)]">
+              <SelectedPracticeConcertInfo concert={selectedConcertSummary} />
+              <RegisteredSeatMapPreview
+                seatMap={selectedConcertSummary.latestSeatMap}
+              />
+            </div>
+
             <div className="xl:sticky xl:top-28">
               <PracticePreparationState
                 concertId={selectedConcertSummary.id}
