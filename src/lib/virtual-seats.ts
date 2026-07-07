@@ -428,12 +428,6 @@ export async function ensureVirtualSeatsForSeatMap(seatMapId: string) {
             virtualSeats: true,
           },
         },
-        virtualSeats: {
-          select: {
-            x: true,
-            y: true,
-          },
-        },
       },
     });
     const readinessResults = zones.map((zone) =>

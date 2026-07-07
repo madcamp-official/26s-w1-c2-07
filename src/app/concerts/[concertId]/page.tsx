@@ -126,9 +126,7 @@ export default async function ConcertDetailPage({
     },
     {
       label: "좌석 데이터",
-      value: concert.hasSeatMap
-        ? `${concert.latestSeatMap?.zoneCount ?? 0}개 구역 / ${concert.latestSeatMap?.analysisStatus ?? "분석 전"}`
-        : "등록된 좌석 배치도가 없습니다.",
+      value: "배치도 등록 화면에서 내 좌석 데이터를 확인할 수 있습니다.",
     },
   ];
 
@@ -154,7 +152,7 @@ export default async function ConcertDetailPage({
             <div className="min-w-0">
               <div className="flex flex-wrap gap-2">
                 <span className="rounded-md bg-primary/12 px-3 py-1 text-sm font-bold text-primary">
-                  {concert.hasSeatMap ? "등록됨" : "배치도 미등록"}
+                  공연 정보
                 </span>
                 {concert.genre ? (
                   <span className="rounded-md bg-secondary px-3 py-1 text-sm font-semibold text-secondary-foreground">
@@ -193,11 +191,6 @@ export default async function ConcertDetailPage({
                 <span className="rounded-md bg-muted px-3 py-1.5 text-sm font-semibold">
                   연습 기록 {concert.practiceSessionCount}개
                 </span>
-                {isSeatMapAnalyzed ? (
-                  <span className="rounded-md bg-primary/10 px-3 py-1.5 text-sm font-semibold text-primary">
-                    AI 분석 완료
-                  </span>
-                ) : null}
               </div>
             </div>
           </div>
