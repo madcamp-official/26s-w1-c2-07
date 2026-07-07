@@ -155,7 +155,47 @@ function getSeatMapOwnerWhere(
 
 export async function getConcertList(options: ConcertListOptions = {}) {
   const scope = options.scope ?? "upcoming";
-  const seatMapWhere = getSeatMapOwnerWhere(options.seatMapOwnerId);
+  const seatMapOwnerId = options.seatMapOwnerId;
+
+  if (!seatMapOwnerId) {
+    const concerts = await prisma.concert.findMany({
+      where: getConcertWhere(options),
+      include: {
+        _count: {
+          select: {
+            reviews: true,
+          },
+        },
+      },
+      orderBy: getConcertListOrderBy(scope),
+    });
+
+    return concerts.map((concert) => ({
+      id: concert.id,
+      title: concert.title,
+      artist: concert.artist,
+      venueName: concert.venueName,
+      region: concert.region,
+      startDate: concert.startDate,
+      endDate: concert.endDate,
+      priceMin: concert.priceMin,
+      priceMax: concert.priceMax,
+      posterImageUrl: concert.posterImageUrl,
+      description: concert.description,
+      genre: concert.genre,
+      bookingUrl: concert.bookingUrl,
+      externalSource: concert.externalSource,
+      syncedAt: concert.syncedAt,
+      isSample: concert.isSample,
+      hasSeatMap: false,
+      seatMapCount: 0,
+      reviewCount: concert._count.reviews,
+      latestSeatMapId: null,
+      latestSeatMapStatus: null,
+    }));
+  }
+
+  const seatMapWhere = getSeatMapOwnerWhere(seatMapOwnerId);
   const concerts = await prisma.concert.findMany({
     where: getConcertWhere(options),
     include: {
@@ -260,7 +300,66 @@ export async function getConcertDetail(
   concertId: string,
   options: ConcertDetailOptions = {},
 ) {
-  const seatMapWhere = getSeatMapOwnerWhere(options.seatMapOwnerId);
+  const seatMapOwnerId = options.seatMapOwnerId;
+
+  if (!seatMapOwnerId) {
+    const concert = await prisma.concert.findFirst({
+      where: {
+        id: concertId,
+        isVisible: true,
+      },
+      include: {
+        schedules: {
+          orderBy: [
+            {
+              performanceDate: "asc",
+            },
+            {
+              startTime: "asc",
+            },
+          ],
+        },
+        _count: {
+          select: {
+            reviews: true,
+            practiceSessions: true,
+          },
+        },
+      },
+    });
+
+    if (!concert) {
+      return null;
+    }
+
+    return {
+      id: concert.id,
+      title: concert.title,
+      artist: concert.artist,
+      venueName: concert.venueName,
+      region: concert.region,
+      startDate: concert.startDate,
+      endDate: concert.endDate,
+      priceMin: concert.priceMin,
+      priceMax: concert.priceMax,
+      posterImageUrl: concert.posterImageUrl,
+      description: concert.description,
+      genre: concert.genre,
+      bookingUrl: concert.bookingUrl,
+      externalSource: concert.externalSource,
+      syncedAt: concert.syncedAt,
+      isSample: concert.isSample,
+      createdAt: concert.createdAt,
+      schedules: concert.schedules,
+      hasSeatMap: false,
+      seatMapCount: 0,
+      reviewCount: concert._count.reviews,
+      practiceSessionCount: concert._count.practiceSessions,
+      latestSeatMap: null,
+    };
+  }
+
+  const seatMapWhere = getSeatMapOwnerWhere(seatMapOwnerId);
   const concert = await prisma.concert.findFirst({
     where: {
       id: concertId,

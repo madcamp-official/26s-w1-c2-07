@@ -16,7 +16,6 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { getCurrentUser } from "@/lib/auth";
 import {
   getConcertFilterOptions,
   getConcertList,
@@ -157,10 +156,7 @@ function ConcertPoster({ src, title }: { src: string | null; title: string }) {
 export default async function ConcertListPage({
   searchParams,
 }: ConcertListPageProps) {
-  const [resolvedSearchParams, user] = await Promise.all([
-    searchParams,
-    getCurrentUser(),
-  ]);
+  const resolvedSearchParams = await searchParams;
   const scope = parseScope(resolvedSearchParams?.scope);
   const requestedPage = parsePage(resolvedSearchParams?.page);
   const filters = {
@@ -172,7 +168,6 @@ export default async function ConcertListPage({
     getConcertList({
       scope,
       ...filters,
-      seatMapOwnerId: user?.id ?? null,
     }),
     getConcertFilterOptions({
       scope,
@@ -376,7 +371,7 @@ export default async function ConcertListPage({
                   />
                 </Link>
                 <span className="absolute left-3 top-3 rounded-md bg-primary px-2.5 py-1 text-xs font-bold text-primary-foreground">
-                  {concert.hasSeatMap ? "배치도 등록" : "예정"}
+                  공연 정보
                 </span>
               </div>
 
@@ -415,7 +410,7 @@ export default async function ConcertListPage({
                     </Link>
                   </Button>
                   <Button asChild size="sm">
-                    <Link href={`/practice?concertId=${concert.id}`}>
+                    <Link href={`/concerts/${concert.id}/practice`}>
                       <Ticket className="h-3.5 w-3.5" aria-hidden="true" />
                       티켓팅 연습
                     </Link>

@@ -12,7 +12,6 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { getCurrentUser } from "@/lib/auth";
 import { getConcertList } from "@/lib/concerts";
 import { prisma } from "@/lib/prisma";
 import { formatDateRange } from "@/utils/format";
@@ -63,13 +62,9 @@ function formatReviewSeat(review: Awaited<ReturnType<typeof getRecentReviews>>[n
 }
 
 export default async function Home() {
-  const [user, recentReviews] = await Promise.all([
-    getCurrentUser(),
-    getRecentReviews(),
-  ]);
+  const recentReviews = await getRecentReviews();
   const concerts = await getConcertList({
     scope: "upcoming",
-    seatMapOwnerId: user?.id ?? null,
   });
   const featuredConcerts = concerts.slice(0, 4);
 
@@ -155,7 +150,7 @@ export default async function Home() {
                       </div>
                     )}
                     <span className="absolute left-3 top-3 rounded-md bg-primary px-2.5 py-1 text-xs font-bold text-primary-foreground">
-                      {concert.hasSeatMap ? "분석 가능" : "배치도 필요"}
+                      공연 정보
                     </span>
                   </div>
                 </Link>
