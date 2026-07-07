@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { apiData, apiError } from "@/lib/api";
 import { getCurrentUserWithProfile } from "@/lib/auth";
 import { practiceSessionCreateSchema } from "@/lib/validators";
-import { ensureVirtualSeatsForSeatMap } from "@/lib/virtual-seats";
+import { getVirtualSeatReadinessForSeatMap } from "@/lib/virtual-seats";
 
 export async function POST(request: Request) {
   const auth = await getCurrentUserWithProfile();
@@ -59,13 +59,13 @@ export async function POST(request: Request) {
   }
 
   try {
-    const seatPreparation = await ensureVirtualSeatsForSeatMap(
+    const seatPreparation = await getVirtualSeatReadinessForSeatMap(
       latestSeatMap.id,
     );
 
     if (!seatPreparation.ready) {
       return apiError(
-        "좌석 선택 화면을 준비하지 못했습니다. 좌석 배치도 분석 결과를 확인해주세요.",
+        "좌석 데이터가 아직 생성되지 않았습니다. 배치도 등록 화면에서 전체 좌석 수를 입력해 좌석 데이터를 생성해주세요.",
         409,
       );
     }

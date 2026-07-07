@@ -1,11 +1,10 @@
 import { z } from "zod";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
 import { apiData, apiError } from "@/lib/api";
 import { getCurrentUserWithProfile } from "@/lib/auth";
 import { seatZoneUpdateSchema } from "@/lib/validators";
-import { createVirtualSeatsForZones } from "@/lib/virtual-seats";
 
 const seatZoneParamsSchema = z.object({
   zoneId: z.string().uuid(),
@@ -66,7 +65,7 @@ export async function PATCH(
     return apiError("좌석 구역을 수정할 권한이 없습니다.", 403);
   }
 
-  const { updatedZone, seatPreparation } = await prisma.$transaction(
+  const updatedZone = await prisma.$transaction(
     async (tx) => {
       const updatedZone = await tx.seatZone.update({
         where: {
@@ -80,37 +79,42 @@ export async function PATCH(
             ? {
                 polygon: parsedBody.data
                   .polygon as unknown as Prisma.InputJsonValue,
+                allocatedSeatCount: null,
+                virtualSeatConfig: Prisma.JsonNull,
               }
             : {}),
           isAiGenerated: false,
         },
       });
-      const seatPreparation = parsedBody.data.polygon
-        ? await createVirtualSeatsForZones(
-            tx,
-            [
-              {
-                id: updatedZone.id,
-                bbox: updatedZone.bbox,
-                polygon: updatedZone.polygon,
-              },
-            ],
-            {
-              overwrite: true,
-            },
-          )
-        : null;
 
-      return {
-        updatedZone,
-        seatPreparation,
-      };
+      if (parsedBody.data.polygon) {
+        await tx.virtualSeat.deleteMany({
+          where: {
+            zoneId: updatedZone.id,
+          },
+        });
+
+        await tx.seatMap.update({
+          where: {
+            id: seatZone.seatMap.id,
+          },
+          data: {
+            totalSeatCount: null,
+          },
+        });
+      }
+
+      return updatedZone;
+    },
+    {
+      maxWait: 10_000,
+      timeout: 120_000,
     },
   );
 
   return apiData({
     seatZone: updatedZone,
-    seatCount: seatPreparation?.seatCount ?? null,
+    seatCount: null,
   });
 }
 
