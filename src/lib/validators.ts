@@ -132,7 +132,7 @@ export const virtualSeatGenerateSchema = z.object({
 });
 
 export const seatMapVirtualSeatGenerateSchema = z.object({
-  totalSeatCount: z.coerce.number().int().min(1).max(50_000),
+  totalSeatCount: z.coerce.number().int().min(1).max(30_000),
   overwrite: z.boolean().optional(),
 });
 

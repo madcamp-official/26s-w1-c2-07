@@ -38,7 +38,7 @@ import {
 type AnalysisStatus = "pending" | "success" | "failed";
 
 const LOW_CONFIDENCE_THRESHOLD = 0.65;
-const MAX_TOTAL_SEAT_COUNT = 50_000;
+const MAX_TOTAL_SEAT_COUNT = 30_000;
 const DONUT_RADIUS = 44;
 const DONUT_CIRCUMFERENCE = 2 * Math.PI * DONUT_RADIUS;
 const UNKNOWN_GRADE_LABEL = "미확인";
