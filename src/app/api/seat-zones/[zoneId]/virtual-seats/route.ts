@@ -8,6 +8,7 @@ import { virtualSeatGenerateSchema } from "@/lib/validators";
 import {
   generateVirtualSeats,
   normalizeVirtualSeatBbox,
+  normalizeVirtualSeatPolygon,
 } from "@/utils/virtualSeatGenerator";
 
 const seatZoneParamsSchema = z.object({
@@ -123,7 +124,7 @@ export async function POST(
   const parsedBody = virtualSeatGenerateSchema.safeParse(body);
 
   if (!parsedBody.success) {
-    return apiError("가상 좌석 생성 입력값이 올바르지 않습니다.", 422);
+    return apiError("좌석 데이터 생성 입력값이 올바르지 않습니다.", 422);
   }
 
   const seatZone = await prisma.seatZone.findUnique({
@@ -149,29 +150,31 @@ export async function POST(
   }
 
   if (seatZone.seatMap.createdBy !== auth.user.id) {
-    return apiError("가상 좌석을 생성할 권한이 없습니다.", 403);
+    return apiError("좌석 데이터를 생성할 권한이 없습니다.", 403);
   }
 
   const overwrite = parsedBody.data.overwrite === true;
 
   if (seatZone._count.virtualSeats > 0 && !overwrite) {
     return apiError(
-      "이미 생성된 가상 좌석이 있습니다. 다시 생성하려면 overwrite 값을 true로 보내주세요.",
+      "이미 준비된 좌석 데이터가 있습니다. 다시 생성하려면 overwrite 값을 true로 보내주세요.",
       409,
     );
   }
 
   const bbox = normalizeVirtualSeatBbox(seatZone.bbox);
+  const polygon = normalizeVirtualSeatPolygon(seatZone.polygon);
   const { seats, config } = generateVirtualSeats({
     zoneId: seatZone.id,
     rows: parsedBody.data.rows,
     seatsPerRow: parsedBody.data.seatsPerRow,
     bbox,
+    polygon,
   });
   const virtualSeatConfig: Prisma.InputJsonObject = {
     ...config,
     generatedAt: new Date().toISOString(),
-    coordinateScope: bbox ? "seat-map" : "none",
+    coordinateScope: polygon || bbox ? "seat-map" : "none",
   };
 
   const virtualSeats = await prisma.$transaction(async (tx) => {

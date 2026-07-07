@@ -7,6 +7,7 @@ import { PracticeClient } from "@/app/concerts/[concertId]/practice/practice-cli
 import { Button } from "@/components/ui/button";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { ensureVirtualSeatsForSeatMap } from "@/lib/virtual-seats";
 
 const concertIdSchema = z.string().uuid();
 
@@ -16,23 +17,10 @@ type PracticePageProps = {
   }>;
 };
 
-export default async function PracticePage({ params }: PracticePageProps) {
-  const { concertId } = await params;
-  const parsedConcertId = concertIdSchema.safeParse(concertId);
-
-  if (!parsedConcertId.success) {
-    notFound();
-  }
-
-  const user = await getCurrentUser();
-
-  if (!user) {
-    redirect(`/login?redirect=/concerts/${parsedConcertId.data}/practice`);
-  }
-
-  const concert = await prisma.concert.findUnique({
+async function getPracticeConcert(concertId: string, userId: string) {
+  return prisma.concert.findUnique({
     where: {
-      id: parsedConcertId.data,
+      id: concertId,
     },
     select: {
       id: true,
@@ -60,7 +48,7 @@ export default async function PracticePage({ params }: PracticePageProps) {
       },
       seatMaps: {
         where: {
-          createdBy: user.id,
+          createdBy: userId,
           analysisStatus: "success",
         },
         orderBy: {
@@ -99,21 +87,61 @@ export default async function PracticePage({ params }: PracticePageProps) {
       },
     },
   });
+}
+
+export default async function PracticePage({ params }: PracticePageProps) {
+  const { concertId } = await params;
+  const parsedConcertId = concertIdSchema.safeParse(concertId);
+
+  if (!parsedConcertId.success) {
+    notFound();
+  }
+
+  const user = await getCurrentUser();
+
+  if (!user) {
+    redirect(`/login?redirect=/concerts/${parsedConcertId.data}/practice`);
+  }
+
+  let concert = await getPracticeConcert(parsedConcertId.data, user.id);
 
   if (!concert) {
     notFound();
   }
 
-  const latestSeatMap = concert.seatMaps[0] ?? null;
-  const zones =
+  let latestSeatMap = concert.seatMaps[0] ?? null;
+  let zones =
     latestSeatMap?.zones.map((zone) => ({
       ...zone,
       virtualSeats: zone.virtualSeats,
     })) ?? [];
-  const hasZones = zones.length > 0;
-  const hasVirtualSeats = zones.some((zone) => zone.virtualSeats.length > 0);
+  let hasZones = zones.length > 0;
+  let isPracticeReady = false;
 
-  if (!latestSeatMap || !hasZones || !hasVirtualSeats) {
+  if (latestSeatMap && hasZones) {
+    const seatPreparation = await ensureVirtualSeatsForSeatMap(
+      latestSeatMap.id,
+    );
+    concert = await getPracticeConcert(parsedConcertId.data, user.id);
+
+    if (!concert) {
+      notFound();
+    }
+
+    latestSeatMap = concert.seatMaps[0] ?? null;
+    zones =
+      latestSeatMap?.zones.map((zone) => ({
+        ...zone,
+        virtualSeats: zone.virtualSeats,
+      })) ?? [];
+    hasZones = zones.length > 0;
+    isPracticeReady =
+      seatPreparation.ready &&
+      zones.length > 0 &&
+      zones.every((zone) => zone.virtualSeats.length > 0);
+  }
+
+  if (!latestSeatMap || !hasZones || !isPracticeReady) {
     return (
       <main className="mx-auto w-full max-w-4xl px-6 py-8">
         <Button asChild variant="ghost" size="sm">
@@ -134,22 +162,24 @@ export default async function PracticePage({ params }: PracticePageProps) {
                 티켓팅 연습 준비가 필요합니다
               </h1>
               <p className="mt-3 text-sm leading-6 text-muted-foreground">
-                티켓팅 연습을 시작하려면 좌석 배치도 AI 분석과 구역별 가상
-                좌석 생성이 먼저 완료되어야 합니다.
+                티켓팅 연습을 시작하려면 좌석 배치도 AI 분석이 먼저 완료되어야
+                합니다.
               </p>
             </div>
           </div>
 
           <div className="mt-6 grid gap-3 text-sm text-muted-foreground">
-            <p>좌석 배치도 분석: {latestSeatMap && hasZones ? "완료" : "필요"}</p>
-            <p>가상 좌석 생성: {hasVirtualSeats ? "완료" : "필요"}</p>
+            <p>
+              좌석 배치도 분석: {latestSeatMap && hasZones ? "완료" : "필요"}
+            </p>
+            <p>좌석 선택 화면: {isPracticeReady ? "준비됨" : "준비 필요"}</p>
           </div>
 
           <div className="mt-6 flex flex-wrap gap-2">
             <Button asChild>
               <Link href={`/concerts/${concert.id}/seat-map`}>
                 <ImageUp className="h-4 w-4" aria-hidden="true" />
-                좌석 데이터 준비하기
+                좌석 배치도 확인하기
               </Link>
             </Button>
             <Button asChild variant="outline">
