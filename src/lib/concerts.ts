@@ -10,6 +10,7 @@ type ConcertListOptions = {
   region?: string;
   genre?: string;
   seatMapOwnerId?: string | null;
+  take?: number;
 };
 
 type ConcertDetailOptions = {
@@ -168,6 +169,7 @@ export async function getConcertList(options: ConcertListOptions = {}) {
         },
       },
       orderBy: getConcertListOrderBy(scope),
+      take: options.take,
     });
 
     return concerts.map((concert) => ({
@@ -221,6 +223,7 @@ export async function getConcertList(options: ConcertListOptions = {}) {
       },
     },
     orderBy: getConcertListOrderBy(scope),
+    take: options.take,
   });
 
   return concerts.map((concert) => {
