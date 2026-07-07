@@ -71,10 +71,10 @@ function SelectedPracticeConcertInfo({
   concert: PracticeWorkspaceProps["concert"];
 }) {
   return (
-    <section className="h-full overflow-hidden rounded-lg border bg-card p-4 shadow-sm">
+    <section className="h-full rounded-lg border bg-card p-4 shadow-sm">
       <div className="min-w-0">
         <p className="text-xs font-bold text-primary">공연명</p>
-        <h2 className="mt-1.5 line-clamp-1 text-xl font-black leading-tight tracking-normal [word-break:keep-all]">
+        <h2 className="mt-1.5 whitespace-normal break-words text-xl font-black leading-tight tracking-normal [overflow-wrap:anywhere]">
           {concert.title}
         </h2>
       </div>
@@ -147,7 +147,7 @@ export function PracticeWorkspaceClient({
       {showSetupPreview ? (
         <div
           key="setup-preview"
-          className="grid min-w-0 gap-4 xl:h-full xl:min-h-0 xl:grid-rows-[164px_minmax(0,1fr)]"
+          className="grid min-w-0 gap-4 xl:h-full xl:min-h-0 xl:grid-rows-[auto_minmax(0,1fr)]"
         >
           <SelectedPracticeConcertInfo concert={concert} />
           <RegisteredSeatMapPreview seatMap={seatMap} />

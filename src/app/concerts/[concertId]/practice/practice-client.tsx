@@ -93,6 +93,7 @@ type PositionedSeatSummary = VirtualSeatSummary & {
   zoneGrade: string;
   x: number;
   y: number;
+  baseSizePercent: number;
   sizePercent: number;
 };
 
@@ -142,6 +143,23 @@ type HorizontalSegment = {
 type PolygonSeatRowLayout = SeatRowSummary & {
   y: number;
   segment: HorizontalSegment;
+};
+
+type UniformGridColumnPoint = Point & {
+  columnIndex: number;
+};
+
+type UniformGridRow = {
+  rowIndex: number;
+  y: number;
+  columns: UniformGridColumnPoint[];
+};
+
+type UniformSeatGridLayout = {
+  points: Point[];
+  rowCount: number;
+  columnCount: number;
+  seatSizePercent: number;
 };
 
 type PracticeClientProps = {
@@ -353,6 +371,7 @@ function isNormalizedCoordinate(
 }
 
 const DIRECT_SEAT_SIZE_RATIO = 0.84;
+const DIRECT_SEAT_UNIFORM_SIZE_RATIO = 0.56;
 const DIRECT_SEAT_BOUNDARY_RATIO = 0.9;
 const DIRECT_SEAT_MAX_SIZE_PERCENT = 2.2;
 const DIRECT_SEAT_FALLBACK_SIZE_PERCENT = 1.8;
@@ -998,6 +1017,295 @@ function getPolygonSeatPoint(input: {
   } satisfies Point;
 }
 
+function getUniformGridDimensions(input: {
+  seatCount: number;
+  bounds: BoundingBox;
+  seatMapHeightRatio: number;
+}) {
+  const visualAspectRatio = clampNumber(
+    input.bounds.width /
+      Math.max(input.bounds.height * input.seatMapHeightRatio, GEOMETRY_EPSILON),
+    0.18,
+    5.5,
+  );
+  const columnCount = Math.max(
+    1,
+    Math.ceil(Math.sqrt(input.seatCount * visualAspectRatio)),
+  );
+  const rowCount = Math.max(1, Math.ceil(input.seatCount / columnCount));
+
+  return {
+    rowCount,
+    columnCount,
+  };
+}
+
+function getUniformGridPoint(input: {
+  bounds: BoundingBox;
+  rowIndex: number;
+  rowCount: number;
+  columnIndex: number;
+  columnCount: number;
+}) {
+  return {
+    x:
+      input.bounds.x +
+      input.bounds.width * ((input.columnIndex + 1) / (input.columnCount + 1)),
+    y:
+      input.bounds.y +
+      input.bounds.height * ((input.rowIndex + 1) / (input.rowCount + 1)),
+  } satisfies Point;
+}
+
+function getUniformGridSeatSizePercent(input: {
+  bounds: BoundingBox;
+  rowCount: number;
+  columnCount: number;
+  seatMapHeightRatio: number;
+}) {
+  const columnGap =
+    input.columnCount > 1
+      ? input.bounds.width / (input.columnCount + 1)
+      : Number.POSITIVE_INFINITY;
+  const rowGap =
+    input.rowCount > 1
+      ? (input.bounds.height * input.seatMapHeightRatio) /
+        (input.rowCount + 1)
+      : Number.POSITIVE_INFINITY;
+  const nearestGap = Math.min(columnGap, rowGap);
+
+  if (Number.isFinite(nearestGap)) {
+    return clampDirectSeatSizePercent(nearestGap * 100 * DIRECT_SEAT_SIZE_RATIO);
+  }
+
+  return clampDirectSeatSizePercent(
+    Math.min(input.bounds.width, input.bounds.height * input.seatMapHeightRatio) *
+      100 *
+      0.5,
+  );
+}
+
+function getCenteredColumnPoints(
+  columns: UniformGridColumnPoint[],
+  seatCount: number,
+) {
+  if (seatCount >= columns.length) {
+    return columns;
+  }
+
+  const startIndex = Math.floor((columns.length - seatCount) / 2);
+
+  return columns.slice(startIndex, startIndex + seatCount);
+}
+
+function getRectangularUniformSeatGridLayout(input: {
+  seatCount: number;
+  bounds: BoundingBox;
+  seatMapHeightRatio: number;
+}) {
+  const { rowCount, columnCount } = getUniformGridDimensions(input);
+  let remainingSeatCount = input.seatCount;
+  const points: Point[] = [];
+
+  for (let rowIndex = 0; rowIndex < rowCount && remainingSeatCount > 0; rowIndex += 1) {
+    const rowSeatCount = Math.min(columnCount, remainingSeatCount);
+    const allColumns = Array.from({ length: columnCount }, (_, columnIndex) =>
+      getUniformGridPoint({
+        bounds: input.bounds,
+        rowIndex,
+        rowCount,
+        columnIndex,
+        columnCount,
+      }),
+    ).map((point, columnIndex) => ({
+      ...point,
+      columnIndex,
+    }));
+
+    points.push(...getCenteredColumnPoints(allColumns, rowSeatCount));
+    remainingSeatCount -= rowSeatCount;
+  }
+
+  return {
+    points,
+    rowCount,
+    columnCount,
+    seatSizePercent: getUniformGridSeatSizePercent({
+      bounds: input.bounds,
+      rowCount,
+      columnCount,
+      seatMapHeightRatio: input.seatMapHeightRatio,
+    }),
+  } satisfies UniformSeatGridLayout;
+}
+
+function getPolygonUniformGridRows(input: {
+  bounds: BoundingBox;
+  polygon: Point[];
+  rowCount: number;
+  columnCount: number;
+}) {
+  return Array.from({ length: input.rowCount }, (_, rowIndex) => {
+    const columns = Array.from(
+      { length: input.columnCount },
+      (_, columnIndex) => {
+        const point = getUniformGridPoint({
+          bounds: input.bounds,
+          rowIndex,
+          rowCount: input.rowCount,
+          columnIndex,
+          columnCount: input.columnCount,
+        });
+
+        return {
+          ...point,
+          columnIndex,
+        } satisfies UniformGridColumnPoint;
+      },
+    ).filter((point) => isPointInsidePolygon(point, input.polygon));
+
+    return {
+      rowIndex,
+      y:
+        input.bounds.y +
+        input.bounds.height * ((rowIndex + 1) / (input.rowCount + 1)),
+      columns,
+    } satisfies UniformGridRow;
+  });
+}
+
+function allocateUniformPolygonRowSeats(
+  rows: UniformGridRow[],
+  seatCount: number,
+) {
+  const allocations = rows.map((row) => row.columns.length);
+  let removableSeatCount =
+    allocations.reduce((total, allocation) => total + allocation, 0) -
+    seatCount;
+  const centerRowIndex = (rows.length - 1) / 2;
+
+  while (removableSeatCount > 0) {
+    const targetRowIndex = allocations
+      .map((allocation, rowIndex) => ({
+        allocation,
+        rowIndex,
+        distanceFromCenter: Math.abs(rowIndex - centerRowIndex),
+      }))
+      .filter((row) => row.allocation > 0)
+      .sort(
+        (firstRow, secondRow) =>
+          secondRow.allocation - firstRow.allocation ||
+          secondRow.distanceFromCenter - firstRow.distanceFromCenter ||
+          secondRow.rowIndex - firstRow.rowIndex,
+      )[0]?.rowIndex;
+
+    if (typeof targetRowIndex !== "number") {
+      break;
+    }
+
+    allocations[targetRowIndex] -= 1;
+    removableSeatCount -= 1;
+  }
+
+  return allocations;
+}
+
+function getPolygonUniformSeatGridLayout(input: {
+  seatCount: number;
+  bounds: BoundingBox;
+  polygon: Point[];
+  seatMapHeightRatio: number;
+}) {
+  const baseDimensions = getUniformGridDimensions(input);
+  let rowCount = baseDimensions.rowCount;
+  let columnCount = baseDimensions.columnCount;
+  let rows = getPolygonUniformGridRows({
+    bounds: input.bounds,
+    polygon: input.polygon,
+    rowCount,
+    columnCount,
+  });
+
+  for (let attempt = 0; attempt < 180; attempt += 1) {
+    const capacity = rows.reduce((total, row) => total + row.columns.length, 0);
+
+    if (capacity >= input.seatCount) {
+      const allocations = allocateUniformPolygonRowSeats(rows, input.seatCount);
+      const points = rows.flatMap((row, rowIndex) =>
+        getCenteredColumnPoints(row.columns, allocations[rowIndex]),
+      );
+
+      return {
+        points,
+        rowCount,
+        columnCount,
+        seatSizePercent: getUniformGridSeatSizePercent({
+          bounds: input.bounds,
+          rowCount,
+          columnCount,
+          seatMapHeightRatio: input.seatMapHeightRatio,
+        }),
+      } satisfies UniformSeatGridLayout;
+    }
+
+    const columnGap = input.bounds.width / (columnCount + 1);
+    const rowGap =
+      (input.bounds.height * input.seatMapHeightRatio) / (rowCount + 1);
+
+    if (columnGap >= rowGap) {
+      columnCount += 1;
+    } else {
+      rowCount += 1;
+    }
+
+    rows = getPolygonUniformGridRows({
+      bounds: input.bounds,
+      polygon: input.polygon,
+      rowCount,
+      columnCount,
+    });
+  }
+
+  return null;
+}
+
+function getUniformSeatGridLayout(input: {
+  seatCount: number;
+  bbox: BoundingBox | null;
+  polygon: Point[] | null;
+  coordinateBounds: BoundingBox | null;
+  seatMapHeightRatio: number;
+}) {
+  const polygonBounds = input.polygon ? getPointBounds(input.polygon) : null;
+  const bounds = polygonBounds ?? input.bbox ?? input.coordinateBounds;
+
+  if (!bounds || input.seatCount <= 0) {
+    return null;
+  }
+
+  if (input.polygon && polygonBounds) {
+    return (
+      getPolygonUniformSeatGridLayout({
+        seatCount: input.seatCount,
+        bounds: polygonBounds,
+        polygon: input.polygon,
+        seatMapHeightRatio: input.seatMapHeightRatio,
+      }) ??
+      getRectangularUniformSeatGridLayout({
+        seatCount: input.seatCount,
+        bounds,
+        seatMapHeightRatio: input.seatMapHeightRatio,
+      })
+    );
+  }
+
+  return getRectangularUniformSeatGridLayout({
+    seatCount: input.seatCount,
+    bounds,
+    seatMapHeightRatio: input.seatMapHeightRatio,
+  });
+}
+
 function getDisplayDistanceToSegment(input: {
   point: Point;
   segmentStart: Point;
@@ -1167,6 +1475,23 @@ function getPolygonBoundedSeatSizePercent(input: {
   return Math.min(
     input.seatSizePercent,
     boundaryDistance * 2 * 100 * DIRECT_SEAT_BOUNDARY_RATIO,
+  );
+}
+
+function getUniformDirectSeatSizePercent(seats: PositionedSeatSummary[]) {
+  const baseSizePercents = seats
+    .map((seat) => seat.baseSizePercent)
+    .filter((sizePercent) => Number.isFinite(sizePercent) && sizePercent > 0);
+
+  if (baseSizePercents.length === 0) {
+    return DIRECT_SEAT_FALLBACK_SIZE_PERCENT;
+  }
+
+  const densestSeatSizePercent = Math.min(...baseSizePercents);
+
+  return clampDirectSeatSizePercent(
+    densestSeatSizePercent *
+      (DIRECT_SEAT_UNIFORM_SIZE_RATIO / DIRECT_SEAT_SIZE_RATIO),
   );
 }
 
@@ -1416,6 +1741,40 @@ export function PracticeClient({
           rowLabel,
           seats,
         }));
+        const sortedSeats = rows.flatMap((row) => row.seats);
+        const uniformSeatGridLayout = isDirectSeatMapSelect
+          ? getUniformSeatGridLayout({
+              seatCount: sortedSeats.length,
+              bbox,
+              polygon,
+              coordinateBounds,
+              seatMapHeightRatio,
+            })
+          : null;
+
+        if (uniformSeatGridLayout) {
+          return sortedSeats.flatMap((seat, seatIndex) => {
+            const point = uniformSeatGridLayout.points[seatIndex];
+
+            if (!point) {
+              return [];
+            }
+
+            return [
+              {
+                ...seat,
+                zoneId: zone.id,
+                zoneName: zone.name,
+                zoneGrade: zone.grade,
+                x: point.x,
+                y: point.y,
+                baseSizePercent: uniformSeatGridLayout.seatSizePercent,
+                sizePercent: uniformSeatGridLayout.seatSizePercent,
+              } satisfies PositionedSeatSummary,
+            ];
+          });
+        }
+
         const maxDirectSeatsPerRow = rows.reduce(
           (maxSeatCount, row) => Math.max(maxSeatCount, row.seats.length),
           0,
@@ -1495,13 +1854,14 @@ export function PracticeClient({
                 zoneGrade: zone.grade,
                 x,
                 y,
+                baseSizePercent: seatSizePercent,
                 sizePercent: boundedSeatSizePercent,
               } satisfies PositionedSeatSummary,
             ];
           }),
         );
       }),
-    [seatMapHeightRatio, zonesWithGeometry],
+    [isDirectSeatMapSelect, seatMapHeightRatio, zonesWithGeometry],
   );
   const activeYes24SeatGroupSeats = useMemo(
     () =>
@@ -1517,6 +1877,10 @@ export function PracticeClient({
       directSeatMapSeats
         .filter((seat) => seat.status === "available")
         .map((seat) => seat.id),
+    [directSeatMapSeats],
+  );
+  const directSeatMapUniformSizePercent = useMemo(
+    () => getUniformDirectSeatSizePercent(directSeatMapSeats),
     [directSeatMapSeats],
   );
   const queueProgressPercent =
@@ -2979,7 +3343,7 @@ export function PracticeClient({
                                 style={{
                                   left: `${seat.x * 100}%`,
                                   top: `${seat.y * 100}%`,
-                                  width: `min(${directSeatMaxSizePx.toFixed(1)}px, ${seat.sizePercent.toFixed(4)}%)`,
+                                  width: `min(${directSeatMaxSizePx.toFixed(1)}px, ${directSeatMapUniformSizePercent.toFixed(4)}%)`,
                                 }}
                                 title={`${seat.zoneName} · ${seat.rowLabel} ${seat.seatNumber}번`}
                                 aria-label={`${seat.zoneName} ${seat.rowLabel} ${seat.seatNumber}번 좌석`}
