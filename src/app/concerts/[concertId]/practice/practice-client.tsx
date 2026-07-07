@@ -366,6 +366,7 @@ const MELON_MINI_MAP_MIN_ZOOM = 1;
 const MELON_MINI_MAP_MAX_ZOOM = 4;
 const MELON_MINI_MAP_ZOOM_STEP = 0.18;
 const GEOMETRY_EPSILON = 0.000001;
+const UNKNOWN_ZONE_GRADE_LABEL = "미확인";
 const YES24_GROUP_ADJACENCY_TOLERANCE = 0.035;
 const YES24_GROUP_MAX_ZONE_COUNT = 3;
 const YES24_GROUP_PADDING_RATIO = 0.12;
@@ -381,6 +382,26 @@ const YES24_RECT_SEAT_MAX_WIDTH_PERCENT = 4.2;
 
 function clampNumber(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
+}
+
+function getVisibleZoneGrade(grade: string) {
+  const trimmedGrade = grade.trim();
+
+  if (!trimmedGrade || trimmedGrade === UNKNOWN_ZONE_GRADE_LABEL) {
+    return "";
+  }
+
+  return trimmedGrade;
+}
+
+function formatSeatZoneLabel(name: string, grade: string, separator = " · ") {
+  const visibleGrade = getVisibleZoneGrade(grade);
+
+  if (!visibleGrade) {
+    return name;
+  }
+
+  return `${name}${separator}${visibleGrade}`;
 }
 
 function getSeatMapHeightRatio(seatMap: PracticeClientProps["seatMap"]) {
@@ -2239,7 +2260,7 @@ export function PracticeClient({
           {zoneOverlays.map((zone) => {
             const isSelected = selectedZone?.id === zone.id;
             const needsGeometryReview = !zone.polygon;
-            const zoneLabel = `${zone.name} ${zone.grade}`;
+            const zoneLabel = formatSeatZoneLabel(zone.name, zone.grade, " ");
 
             return (
               <g
@@ -2301,16 +2322,18 @@ export function PracticeClient({
           })}
         </svg>
         {showLabels
-          ? zoneOverlays.map((zone) =>
-              zone.labelPoint ? (
+          ? zoneOverlays.map((zone) => {
+              const visibleGrade = getVisibleZoneGrade(zone.grade);
+              const zoneLabel = formatSeatZoneLabel(zone.name, zone.grade, " ");
+              const zoneTitle = zone.polygon
+                ? zoneLabel
+                : `${zoneLabel} - 외곽선 확인 필요`;
+
+              return zone.labelPoint ? (
                 <button
                   key={`${zone.id}-label`}
                   type="button"
-                  title={
-                    zone.polygon
-                      ? `${zone.name} ${zone.grade}`
-                      : `${zone.name} ${zone.grade} - 외곽선 확인 필요`
-                  }
+                  title={zoneTitle}
                   className={[
                     "absolute z-10 max-w-36 rounded-md border bg-background/95 px-2 py-1 text-left text-[11px] font-medium shadow-sm transition",
                     selectedZone?.id === zone.id && zone.polygon
@@ -2329,17 +2352,19 @@ export function PracticeClient({
                   onClick={() => onZoneSelect(zone)}
                 >
                   <span className="block truncate">{zone.name}</span>
-                  <span className="block truncate text-muted-foreground">
-                    {zone.grade}
-                  </span>
+                  {visibleGrade ? (
+                    <span className="block truncate text-muted-foreground">
+                      {visibleGrade}
+                    </span>
+                  ) : null}
                   {!zone.polygon ? (
                     <span className="block truncate text-amber-700">
                       확인 필요
                     </span>
                   ) : null}
                 </button>
-              ) : null,
-            )
+              ) : null;
+            })
           : null}
       </div>
     );
@@ -2360,7 +2385,7 @@ export function PracticeClient({
           <div className="text-sm">
             <p className="font-medium">
               {selectedZone
-                ? `${selectedZone.name} · ${selectedZone.grade}`
+                ? formatSeatZoneLabel(selectedZone.name, selectedZone.grade)
                 : "구역 미선택"}
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
@@ -3302,7 +3327,11 @@ export function PracticeClient({
                             {zoneOverlays.map((zone) => {
                               const isSelected = selectedZone?.id === zone.id;
                               const needsGeometryReview = !zone.polygon;
-                              const zoneLabel = `${zone.name} ${zone.grade}`;
+                              const zoneLabel = formatSeatZoneLabel(
+                                zone.name,
+                                zone.grade,
+                                " ",
+                              );
 
                               return (
                                 <g
@@ -3354,16 +3383,24 @@ export function PracticeClient({
                               );
                             })}
                           </svg>
-                          {zoneOverlays.map((zone) =>
-                            zone.labelPoint ? (
+                          {zoneOverlays.map((zone) => {
+                            const visibleGrade = getVisibleZoneGrade(
+                              zone.grade,
+                            );
+                            const zoneLabel = formatSeatZoneLabel(
+                              zone.name,
+                              zone.grade,
+                              " ",
+                            );
+                            const zoneTitle = zone.polygon
+                              ? zoneLabel
+                              : `${zoneLabel} - 외곽선 확인 필요`;
+
+                            return zone.labelPoint ? (
                               <button
                                 key={`${zone.id}-label`}
                                 type="button"
-                                title={
-                                  zone.polygon
-                                    ? `${zone.name} ${zone.grade}`
-                                    : `${zone.name} ${zone.grade} - 외곽선 확인 필요`
-                                }
+                                title={zoneTitle}
                                 className={[
                                   "absolute z-10 max-w-36 rounded-md border bg-background/95 px-2 py-1 text-left text-[11px] font-medium shadow-sm transition",
                                   selectedZone?.id === zone.id && zone.polygon
@@ -3384,53 +3421,57 @@ export function PracticeClient({
                                 <span className="block truncate">
                                   {zone.name}
                                 </span>
-                                <span className="block truncate text-muted-foreground">
-                                  {zone.grade}
-                                </span>
+                                {visibleGrade ? (
+                                  <span className="block truncate text-muted-foreground">
+                                    {visibleGrade}
+                                  </span>
+                                ) : null}
                                 {!zone.polygon ? (
                                   <span className="block truncate text-amber-700">
                                     확인 필요
                                   </span>
                                 ) : null}
                               </button>
-                            ) : null,
-                          )}
+                            ) : null;
+                          })}
                         </div>
                       </div>
 
-                      <div className="grid gap-2 sm:grid-cols-2">
-                        {zonesWithGeometry.map((zone) => (
-                          <button
-                            key={zone.id}
-                            type="button"
-                            className={[
-                              "rounded-md border bg-background px-3 py-2 text-left text-sm transition",
-                              selectedZoneId === zone.id
-                                ? "border-primary bg-primary/5"
-                                : "hover:border-primary/60",
-                            ].join(" ")}
-                            onClick={() => handleZoneSelect(zone)}
-                          >
-                            <span className="font-medium">
-                              {zone.name} · {zone.grade}
-                            </span>
-                            <span className="mt-1 block text-xs text-muted-foreground">
-                              남은 좌석{" "}
-                              {
-                                zone.virtualSeats.filter((seat) =>
-                                  remainingSelectableSeatIdSet.has(seat.id),
-                                ).length
-                              }
-                              석 / 전체 {zone.virtualSeats.length}석
-                            </span>
-                            {!zone.polygon ? (
-                              <span className="mt-1 block text-xs text-amber-700">
-                                외곽선 확인 필요
+                      {!isSplitSeatSelect ? (
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          {zonesWithGeometry.map((zone) => (
+                            <button
+                              key={zone.id}
+                              type="button"
+                              className={[
+                                "rounded-md border bg-background px-3 py-2 text-left text-sm transition",
+                                selectedZoneId === zone.id
+                                  ? "border-primary bg-primary/5"
+                                  : "hover:border-primary/60",
+                              ].join(" ")}
+                              onClick={() => handleZoneSelect(zone)}
+                            >
+                              <span className="font-medium">
+                                {formatSeatZoneLabel(zone.name, zone.grade)}
                               </span>
-                            ) : null}
-                          </button>
-                        ))}
-                      </div>
+                              <span className="mt-1 block text-xs text-muted-foreground">
+                                남은 좌석{" "}
+                                {
+                                  zone.virtualSeats.filter((seat) =>
+                                    remainingSelectableSeatIdSet.has(seat.id),
+                                  ).length
+                                }
+                                석 / 전체 {zone.virtualSeats.length}석
+                              </span>
+                              {!zone.polygon ? (
+                                <span className="mt-1 block text-xs text-amber-700">
+                                  외곽선 확인 필요
+                                </span>
+                              ) : null}
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
                     </div>
 
                     {!isSplitSeatSelect ? (
