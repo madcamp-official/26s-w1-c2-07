@@ -140,11 +140,21 @@ export async function DELETE(
     return apiError("좌석 구역을 삭제할 권한이 없습니다.", 403);
   }
 
-  await prisma.seatZone.delete({
-    where: {
-      id: seatZone.id,
-    },
-  });
+  await prisma.$transaction([
+    prisma.seatZone.delete({
+      where: {
+        id: seatZone.id,
+      },
+    }),
+    prisma.seatMap.update({
+      where: {
+        id: seatZone.seatMap.id,
+      },
+      data: {
+        totalSeatCount: null,
+      },
+    }),
+  ]);
 
   return apiData({
     deleted: true,

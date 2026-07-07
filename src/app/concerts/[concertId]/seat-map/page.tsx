@@ -43,7 +43,11 @@ function SeatMapStep({
               : "border-muted bg-muted text-muted-foreground",
         ].join(" ")}
       >
-        {state === "done" ? <Check className="h-4 w-4" aria-hidden="true" /> : index}
+        {state === "done" ? (
+          <Check className="h-4 w-4" aria-hidden="true" />
+        ) : (
+          index
+        )}
       </span>
       <span className="min-w-0">
         <span className="block text-sm font-black">{title}</span>
@@ -111,9 +115,7 @@ export default async function SeatMapPage({ params }: SeatMapPageProps) {
             index={2}
             title="AI 분석"
             description="구역 정보 추출"
-            state={
-              analysisDone ? "done" : hasSeatMap ? "active" : "idle"
-            }
+            state={analysisDone ? "done" : hasSeatMap ? "active" : "idle"}
           />
           <SeatMapStep
             index={3}
@@ -180,15 +182,18 @@ export default async function SeatMapPage({ params }: SeatMapPageProps) {
       {latestSeatMap ? (
         <div className="mt-6">
           <SeatMapAnalysisPanel
+            key={`${latestSeatMap.id}-${latestSeatMap.totalSeatCount ?? "auto"}`}
             seatMap={{
               id: latestSeatMap.id,
               imageUrl: latestSeatMap.imageUrl,
+              totalSeatCount: latestSeatMap.totalSeatCount,
               analysisStatus: latestSeatMap.analysisStatus,
               zones: latestSeatMap.zones.map((zone) => ({
                 id: zone.id,
                 name: zone.name,
                 grade: zone.grade,
                 price: zone.price,
+                allocatedSeatCount: zone.allocatedSeatCount,
                 bbox: zone.bbox,
                 polygon: zone.polygon,
                 confidence: zone.confidence,

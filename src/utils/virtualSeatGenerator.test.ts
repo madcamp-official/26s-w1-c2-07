@@ -184,4 +184,35 @@ describe("virtualSeatGenerator", () => {
     expect(capped.config.totalSeats).toBe(MAX_VIRTUAL_SEAT_TOTAL);
     expect(capped.config.seatsPerRow).toBe(10);
   });
+
+  it("generates the exact target seat count without applying the automatic cap", () => {
+    const bbox = {
+      x: 0.1,
+      y: 0.2,
+      width: 0.5,
+      height: 0.2,
+    };
+    const result = generateVirtualSeats({
+      zoneId: "zone-1",
+      bbox,
+      targetSeatCount: MAX_VIRTUAL_SEAT_TOTAL + 37,
+    });
+
+    expect(result.config.totalSeats).toBe(MAX_VIRTUAL_SEAT_TOTAL + 37);
+    expect(result.seats).toHaveLength(MAX_VIRTUAL_SEAT_TOTAL + 37);
+    expect(
+      result.config.rows * result.config.seatsPerRow,
+    ).toBeGreaterThanOrEqual(result.config.totalSeats);
+    expect(
+      result.seats.every(
+        (seat) =>
+          typeof seat.x === "number" &&
+          typeof seat.y === "number" &&
+          seat.x > bbox.x &&
+          seat.x < bbox.x + bbox.width &&
+          seat.y > bbox.y &&
+          seat.y < bbox.y + bbox.height,
+      ),
+    ).toBe(true);
+  });
 });

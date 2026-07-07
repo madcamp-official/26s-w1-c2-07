@@ -117,11 +117,21 @@ export const virtualSeatGenerateSchema = z.object({
   overwrite: z.boolean().optional(),
 });
 
+export const seatMapVirtualSeatGenerateSchema = z.object({
+  totalSeatCount: z.coerce.number().int().min(1).max(50_000),
+  overwrite: z.boolean().optional(),
+});
+
 export const practiceSessionCreateSchema = z.object({
   concertId: z.string().uuid(),
   templateType: z.enum(ACTIVE_TICKET_TEMPLATE_TYPES),
   difficulty: z.enum(PRACTICE_DIFFICULTIES).optional(),
-  startDelayMs: z.number().int().min(0).max(60 * 1000).optional(),
+  startDelayMs: z
+    .number()
+    .int()
+    .min(0)
+    .max(60 * 1000)
+    .optional(),
 });
 
 export const practiceSessionCompleteSchema = z
@@ -130,7 +140,11 @@ export const practiceSessionCompleteSchema = z
     scheduleId: z.string().uuid().optional(),
     selectedZoneId: z.string().uuid().nullable().optional(),
     selectedSeatId: z.string().uuid().nullable().optional(),
-    elapsedMs: z.number().int().min(0).max(10 * 60 * 1000),
+    elapsedMs: z
+      .number()
+      .int()
+      .min(0)
+      .max(10 * 60 * 1000),
     failReason: z.string().trim().max(200).nullable().optional(),
   })
   .superRefine((value, context) => {

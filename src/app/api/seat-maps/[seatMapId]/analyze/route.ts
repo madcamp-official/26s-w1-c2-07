@@ -208,6 +208,7 @@ export async function POST(
           data: {
             analysisStatus: "success",
             aiRawResult,
+            totalSeatCount: null,
           },
           include: {
             zones: {
