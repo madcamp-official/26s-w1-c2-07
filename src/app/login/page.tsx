@@ -31,7 +31,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
     <main className="grid min-h-[calc(100vh-81px)] lg:grid-cols-[0.9fr_1.1fr]">
       <section className="flex items-center bg-[#f7f5fc] px-6 py-8 sm:px-10 lg:px-14">
         <div className="mx-auto w-full max-w-xl">
-          <p className="text-sm font-bold text-primary">Ticketing Practice</p>
+          <p className="text-sm font-bold text-primary">GrapeRush</p>
           <h1 className="mt-4 text-3xl font-black leading-tight tracking-normal sm:text-4xl">
             연습이 실전이 되는
             <span className="block text-primary">티켓팅 연습 플랫폼</span>
