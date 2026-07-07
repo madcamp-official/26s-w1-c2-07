@@ -13,6 +13,7 @@ import {
 
 type SeatMapUploadFormProps = {
   concertId: string;
+  redirectHref?: string;
 };
 
 type ImageSize = {
@@ -31,7 +32,10 @@ type UploadResponse = {
   };
 };
 
-export function SeatMapUploadForm({ concertId }: SeatMapUploadFormProps) {
+export function SeatMapUploadForm({
+  concertId,
+  redirectHref,
+}: SeatMapUploadFormProps) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const objectUrlRef = useRef<string | null>(null);
@@ -144,7 +148,7 @@ export function SeatMapUploadForm({ concertId }: SeatMapUploadFormProps) {
         );
       }
 
-      router.push(`/concerts/${concertId}/seat-map`);
+      router.push(redirectHref ?? `/concerts/${concertId}/seat-map/analysis`);
       router.refresh();
     } catch (error) {
       setMessage(
@@ -189,7 +193,9 @@ export function SeatMapUploadForm({ concertId }: SeatMapUploadFormProps) {
             <p className="font-bold text-foreground">이미지 업로드 TIP</p>
             <ul className="mt-2 list-disc space-y-1 pl-5">
               <li>좌석 구역명이 선명하게 보이는 이미지를 업로드해주세요.</li>
-              <li>공식 사이트의 좌석 배치도 또는 공연장 안내도를 권장합니다.</li>
+              <li>
+                공식 사이트의 좌석 배치도 또는 공연장 안내도를 권장합니다.
+              </li>
               <li>업로드 후 AI 분석으로 구역 후보를 자동 추출합니다.</li>
             </ul>
           </div>
@@ -218,7 +224,9 @@ export function SeatMapUploadForm({ concertId }: SeatMapUploadFormProps) {
             <div className="mt-3 flex min-h-80 items-center justify-center rounded-md border bg-secondary text-sm text-muted-foreground">
               <div className="text-center">
                 <ImageUp className="mx-auto h-9 w-9" aria-hidden="true" />
-                <p className="mt-3">이미지를 업로드하면 미리보기가 표시됩니다.</p>
+                <p className="mt-3">
+                  이미지를 업로드하면 미리보기가 표시됩니다.
+                </p>
               </div>
             </div>
           )}
@@ -233,11 +241,12 @@ export function SeatMapUploadForm({ concertId }: SeatMapUploadFormProps) {
 
       <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_220px] sm:items-center">
         <p className="rounded-md border bg-primary/5 px-4 py-3 text-sm text-muted-foreground">
-          이미지 업로드 후 AI 분석을 시작하면 좌석 구역이 자동으로 인식됩니다.
+          이미지를 업로드하면 AI 분석 페이지로 이동해 좌석 구역 인식을
+          시작합니다.
         </p>
         <Button type="submit" disabled={!file || isPending} className="h-12">
           {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-          좌석 배치도 업로드
+          AI 분석하기
         </Button>
       </div>
     </form>

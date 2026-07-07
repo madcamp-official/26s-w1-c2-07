@@ -102,9 +102,14 @@ export default async function ConcertDetailPage({
   const isSeatMapAnalyzed =
     concert.latestSeatMap?.analysisStatus === "success" &&
     concert.latestSeatMap.zoneCount > 0;
-  const practiceHref = concert.hasSeatMap
+  const seatMapHref = !concert.hasSeatMap
+    ? `/concerts/${concert.id}/seat-map/upload`
+    : isSeatMapAnalyzed
+      ? `/concerts/${concert.id}/seat-map/edit`
+      : `/concerts/${concert.id}/seat-map/analysis`;
+  const practiceHref = isSeatMapAnalyzed
     ? `/practice?concertId=${concert.id}`
-    : `/concerts/${concert.id}/seat-map`;
+    : seatMapHref;
   const concertDateRange = formatDateRange(concert.startDate, concert.endDate);
   const infoRows = [
     {
@@ -222,7 +227,7 @@ export default async function ConcertDetailPage({
 
         <aside className="space-y-5 lg:border-l lg:pl-10">
           <ActionCard
-            href={`/concerts/${concert.id}/seat-map`}
+            href={seatMapHref}
             icon={<ImageUp className="h-8 w-8" aria-hidden="true" />}
             title="배치도 등록"
             description="공연장의 좌석 배치도를 등록하고 AI 분석 결과를 확인하세요."

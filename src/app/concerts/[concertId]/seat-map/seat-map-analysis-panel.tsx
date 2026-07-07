@@ -1,6 +1,14 @@
 "use client";
 
-import { FormEvent, PointerEvent, useMemo, useRef, useState } from "react";
+import {
+  FormEvent,
+  PointerEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Loader2,
@@ -31,6 +39,8 @@ type AnalysisStatus = "pending" | "success" | "failed";
 
 const LOW_CONFIDENCE_THRESHOLD = 0.65;
 const MAX_TOTAL_SEAT_COUNT = 50_000;
+const DONUT_RADIUS = 44;
+const DONUT_CIRCUMFERENCE = 2 * Math.PI * DONUT_RADIUS;
 
 type SeatMapZone = {
   id: string;
@@ -51,14 +61,26 @@ type AnalyzedSeatMapZone = Omit<SeatMapZone, "bbox" | "polygon"> & {
   needsGeometryReview: boolean;
 };
 
+type PolygonDragState = {
+  pointer: Point;
+  polygon: Point[];
+};
+
 type SeatMapAnalysisPanelProps = {
   seatMap: {
     id: string;
     imageUrl: string;
+    imageWidth: number | null;
+    imageHeight: number | null;
     totalSeatCount: number | null;
     analysisStatus: AnalysisStatus;
     zones: SeatMapZone[];
   };
+  mode: "analysis" | "edit";
+  autoAnalyze?: boolean;
+  editHref?: string;
+  analysisHref?: string;
+  practiceHref?: string;
 };
 
 type AnalyzeResponse = {
@@ -104,12 +126,6 @@ function isLowConfidence(confidence: number | null) {
   return confidence === null || confidence < LOW_CONFIDENCE_THRESHOLD;
 }
 
-function formatPrice(price: number | null) {
-  return typeof price === "number"
-    ? `${price.toLocaleString("ko-KR")}원`
-    : "가격 미입력";
-}
-
 function getAnalyzeButtonText(status: AnalysisStatus) {
   if (status === "success") {
     return "AI 좌석 구역 다시 분석";
@@ -122,11 +138,38 @@ function getAnalyzeButtonText(status: AnalysisStatus) {
   return "AI 좌석 구역 분석 시작";
 }
 
-export function SeatMapAnalysisPanel({ seatMap }: SeatMapAnalysisPanelProps) {
+function getImageSpacePolygonPointsAttribute(
+  points: Point[],
+  imageWidth: number,
+  imageHeight: number,
+) {
+  return points
+    .map((point) => `${point.x * imageWidth},${point.y * imageHeight}`)
+    .join(" ");
+}
+
+export function SeatMapAnalysisPanel({
+  seatMap,
+  mode,
+  autoAnalyze = false,
+  editHref,
+  analysisHref,
+  practiceHref,
+}: SeatMapAnalysisPanelProps) {
   const router = useRouter();
   const svgRef = useRef<SVGSVGElement | null>(null);
+  const autoAnalyzeStartedRef = useRef(false);
+  const handleAnalyzeRef = useRef<
+    (options?: { skipConfirm?: boolean }) => Promise<void>
+  >(async () => {});
   const [message, setMessage] = useState("");
   const [isPending, setIsPending] = useState(false);
+  const [analysisProgress, setAnalysisProgress] = useState(
+    seatMap.analysisStatus === "success" ? 100 : 0,
+  );
+  const [analyzedZoneCount, setAnalyzedZoneCount] = useState<number | null>(
+    null,
+  );
   const [isMutating, setIsMutating] = useState(false);
   const [isGeneratingSeats, setIsGeneratingSeats] = useState(false);
   const [totalSeatCount, setTotalSeatCount] = useState(
@@ -135,7 +178,6 @@ export function SeatMapAnalysisPanel({ seatMap }: SeatMapAnalysisPanelProps) {
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [grade, setGrade] = useState("");
-  const [price, setPrice] = useState("");
   const [isEditingPolygon, setIsEditingPolygon] = useState(false);
   const [editablePolygon, setEditablePolygon] = useState<Point[]>([]);
   const [selectedPointIndex, setSelectedPointIndex] = useState<number | null>(
@@ -144,6 +186,8 @@ export function SeatMapAnalysisPanel({ seatMap }: SeatMapAnalysisPanelProps) {
   const [draggingPointIndex, setDraggingPointIndex] = useState<number | null>(
     null,
   );
+  const [draggingPolygon, setDraggingPolygon] =
+    useState<PolygonDragState | null>(null);
   const zones = useMemo(
     () =>
       seatMap.zones
@@ -172,6 +216,57 @@ export function SeatMapAnalysisPanel({ seatMap }: SeatMapAnalysisPanelProps) {
   );
   const selectedZone = zones.find((zone) => zone.id === selectedZoneId) ?? null;
   const minimumSeatCount = zones.length;
+  const isAnalysisMode = mode === "analysis";
+  const isEditMode = mode === "edit";
+  const imageWidth =
+    typeof seatMap.imageWidth === "number" && seatMap.imageWidth > 0
+      ? seatMap.imageWidth
+      : 100;
+  const imageHeight =
+    typeof seatMap.imageHeight === "number" && seatMap.imageHeight > 0
+      ? seatMap.imageHeight
+      : 100;
+  const displayedZoneCount =
+    analyzedZoneCount ??
+    (seatMap.analysisStatus === "success" ? zones.length : 0);
+  const displayedAnalysisProgress = isPending
+    ? analysisProgress
+    : seatMap.analysisStatus === "success"
+      ? 100
+      : seatMap.analysisStatus === "failed"
+        ? 0
+        : analysisProgress;
+  const analysisProgressDescription = isPending
+    ? "이미지에서 좌석 구역 후보를 추출하는 중입니다."
+    : seatMap.analysisStatus === "success"
+      ? "분석이 완료되었습니다. 구역 수정 단계에서 결과를 조정할 수 있습니다."
+      : seatMap.analysisStatus === "failed"
+        ? "분석에 실패했습니다. 다시 분석을 시도해주세요."
+        : "업로드 페이지에서 AI 분석하기를 누르면 자동으로 시작됩니다.";
+  const donutStrokeOffset =
+    DONUT_CIRCUMFERENCE * (1 - displayedAnalysisProgress / 100);
+
+  useEffect(() => {
+    if (!isPending) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      setAnalysisProgress((currentProgress) => {
+        if (currentProgress >= 92) {
+          return currentProgress;
+        }
+
+        const step = currentProgress < 40 ? 7 : currentProgress < 70 ? 4 : 2;
+
+        return Math.min(currentProgress + step, 92);
+      });
+    }, 700);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [isPending, seatMap.analysisStatus]);
 
   function selectZone(zone: AnalyzedSeatMapZone) {
     if (isEditingPolygon && zone.id !== selectedZoneId) {
@@ -184,11 +279,11 @@ export function SeatMapAnalysisPanel({ seatMap }: SeatMapAnalysisPanelProps) {
     setSelectedZoneId(zone.id);
     setName(zone.name);
     setGrade(zone.grade);
-    setPrice(typeof zone.price === "number" ? String(zone.price) : "");
     setIsEditingPolygon(false);
     setEditablePolygon([]);
     setSelectedPointIndex(null);
     setDraggingPointIndex(null);
+    setDraggingPolygon(null);
   }
 
   function getEditablePolygonFromZone(zone: AnalyzedSeatMapZone) {
@@ -204,6 +299,7 @@ export function SeatMapAnalysisPanel({ seatMap }: SeatMapAnalysisPanelProps) {
     setEditablePolygon(getEditablePolygonFromZone(selectedZone));
     setSelectedPointIndex(null);
     setDraggingPointIndex(null);
+    setDraggingPolygon(null);
     setIsEditingPolygon(true);
     setMessage("");
   }
@@ -213,6 +309,7 @@ export function SeatMapAnalysisPanel({ seatMap }: SeatMapAnalysisPanelProps) {
     setEditablePolygon([]);
     setSelectedPointIndex(null);
     setDraggingPointIndex(null);
+    setDraggingPolygon(null);
   }
 
   function resetPolygonToBbox() {
@@ -222,6 +319,8 @@ export function SeatMapAnalysisPanel({ seatMap }: SeatMapAnalysisPanelProps) {
 
     setEditablePolygon(polygonFromBbox(selectedZone.bbox));
     setSelectedPointIndex(null);
+    setDraggingPointIndex(null);
+    setDraggingPolygon(null);
     setMessage("bbox 기준 사각형 외곽선으로 초기화했습니다.");
   }
 
@@ -273,9 +372,7 @@ export function SeatMapAnalysisPanel({ seatMap }: SeatMapAnalysisPanelProps) {
     setSelectedPointIndex(null);
   }
 
-  function getNormalizedPointFromPointer(
-    event: PointerEvent<SVGSVGElement | SVGCircleElement>,
-  ) {
+  function getNormalizedPointFromPointer(event: PointerEvent<SVGElement>) {
     const svgElement = svgRef.current;
 
     if (!svgElement) {
@@ -303,10 +400,63 @@ export function SeatMapAnalysisPanel({ seatMap }: SeatMapAnalysisPanelProps) {
     event.currentTarget.setPointerCapture(event.pointerId);
     setSelectedPointIndex(pointIndex);
     setDraggingPointIndex(pointIndex);
+    setDraggingPolygon(null);
+  }
+
+  function getTranslatedPolygon(
+    polygon: Point[],
+    deltaX: number,
+    deltaY: number,
+  ) {
+    const minX = Math.min(...polygon.map((point) => point.x));
+    const maxX = Math.max(...polygon.map((point) => point.x));
+    const minY = Math.min(...polygon.map((point) => point.y));
+    const maxY = Math.max(...polygon.map((point) => point.y));
+    const clampedDeltaX = Math.min(Math.max(deltaX, -minX), 1 - maxX);
+    const clampedDeltaY = Math.min(Math.max(deltaY, -minY), 1 - maxY);
+
+    return polygon.map((point) => ({
+      x: point.x + clampedDeltaX,
+      y: point.y + clampedDeltaY,
+    }));
+  }
+
+  function handlePolygonShapePointerDown(
+    event: PointerEvent<SVGPolygonElement | SVGRectElement>,
+    zone: AnalyzedSeatMapZone,
+  ) {
+    const isSelected = selectedZone?.id === zone.id;
+
+    if (!isEditingPolygon || !isSelected) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+
+    const pointer = getNormalizedPointFromPointer(event);
+
+    if (!pointer) {
+      return;
+    }
+
+    const currentPolygon =
+      editablePolygon.length >= 3
+        ? editablePolygon
+        : getEditablePolygonFromZone(zone);
+
+    setEditablePolygon(currentPolygon);
+    setSelectedPointIndex(null);
+    setDraggingPointIndex(null);
+    setDraggingPolygon({
+      pointer,
+      polygon: currentPolygon,
+    });
   }
 
   function handlePolygonPointerMove(event: PointerEvent<SVGSVGElement>) {
-    if (draggingPointIndex === null) {
+    if (draggingPointIndex === null && !draggingPolygon) {
       return;
     }
 
@@ -316,19 +466,37 @@ export function SeatMapAnalysisPanel({ seatMap }: SeatMapAnalysisPanelProps) {
       return;
     }
 
-    setEditablePolygon((currentPolygon) =>
-      currentPolygon.map((point, index) =>
-        index === draggingPointIndex ? nextPoint : point,
-      ),
-    );
+    if (draggingPointIndex !== null) {
+      setEditablePolygon((currentPolygon) =>
+        currentPolygon.map((point, index) =>
+          index === draggingPointIndex ? nextPoint : point,
+        ),
+      );
+      return;
+    }
+
+    if (draggingPolygon) {
+      setEditablePolygon(
+        getTranslatedPolygon(
+          draggingPolygon.polygon,
+          nextPoint.x - draggingPolygon.pointer.x,
+          nextPoint.y - draggingPolygon.pointer.y,
+        ),
+      );
+    }
   }
 
   function stopDraggingPolygonPoint() {
     setDraggingPointIndex(null);
+    setDraggingPolygon(null);
   }
 
-  async function handleAnalyze() {
-    if (seatMap.analysisStatus === "success" && zones.length > 0) {
+  async function handleAnalyze(options: { skipConfirm?: boolean } = {}) {
+    if (
+      !options.skipConfirm &&
+      seatMap.analysisStatus === "success" &&
+      zones.length > 0
+    ) {
       const confirmed = window.confirm(
         "재분석하면 기존 좌석 구역과 사용자가 수정한 내용이 새 분석 결과로 대체될 수 있습니다. 다시 분석할까요?",
       );
@@ -338,6 +506,7 @@ export function SeatMapAnalysisPanel({ seatMap }: SeatMapAnalysisPanelProps) {
       }
     }
 
+    setAnalysisProgress(8);
     setIsPending(true);
     setMessage("");
 
@@ -353,13 +522,11 @@ export function SeatMapAnalysisPanel({ seatMap }: SeatMapAnalysisPanelProps) {
         );
       }
 
-      setMessage(
-        `${payload.data?.zoneCount ?? 0}개의 좌석 구역을 저장하고 ${payload.data?.seatCount ?? 0}개의 좌석 선택 데이터를 준비했습니다.`,
-      );
+      setAnalyzedZoneCount(payload.data?.zoneCount ?? 0);
+      setAnalysisProgress(100);
       setSelectedZoneId(null);
       setName("");
       setGrade("");
-      setPrice("");
       cancelPolygonEdit();
       router.refresh();
     } catch (error) {
@@ -368,10 +535,31 @@ export function SeatMapAnalysisPanel({ seatMap }: SeatMapAnalysisPanelProps) {
           ? error.message
           : "AI 좌석 구역 분석에 실패했습니다.",
       );
+      setAnalysisProgress(0);
     } finally {
       setIsPending(false);
     }
   }
+
+  useEffect(() => {
+    handleAnalyzeRef.current = handleAnalyze;
+  });
+
+  useEffect(() => {
+    if (
+      !autoAnalyze ||
+      !isAnalysisMode ||
+      autoAnalyzeStartedRef.current ||
+      seatMap.analysisStatus === "success"
+    ) {
+      return;
+    }
+
+    autoAnalyzeStartedRef.current = true;
+    void handleAnalyzeRef.current({
+      skipConfirm: true,
+    });
+  }, [autoAnalyze, isAnalysisMode, seatMap.analysisStatus]);
 
   async function handleSave(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -383,21 +571,10 @@ export function SeatMapAnalysisPanel({ seatMap }: SeatMapAnalysisPanelProps) {
 
     const trimmedName = name.trim();
     const trimmedGrade = grade.trim() || "미확인";
-    const trimmedPrice = price.trim();
-    let parsedPrice: number | null = null;
 
     if (!trimmedName) {
       setMessage("구역명을 입력해주세요.");
       return;
-    }
-
-    if (trimmedPrice.length > 0) {
-      parsedPrice = Number.parseInt(trimmedPrice, 10);
-
-      if (!Number.isInteger(parsedPrice) || parsedPrice < 0) {
-        setMessage("가격은 0 이상의 정수로 입력해주세요.");
-        return;
-      }
     }
 
     if (isEditingPolygon && editablePolygon.length < 3) {
@@ -417,7 +594,7 @@ export function SeatMapAnalysisPanel({ seatMap }: SeatMapAnalysisPanelProps) {
         body: JSON.stringify({
           name: trimmedName,
           grade: trimmedGrade,
-          price: parsedPrice,
+          price: selectedZone.price,
           ...(isEditingPolygon
             ? {
                 polygon: normalizePolygon(editablePolygon),
@@ -442,6 +619,7 @@ export function SeatMapAnalysisPanel({ seatMap }: SeatMapAnalysisPanelProps) {
       setEditablePolygon([]);
       setSelectedPointIndex(null);
       setDraggingPointIndex(null);
+      setDraggingPolygon(null);
       router.refresh();
     } catch (error) {
       setMessage(
@@ -555,7 +733,6 @@ export function SeatMapAnalysisPanel({ seatMap }: SeatMapAnalysisPanelProps) {
       setSelectedZoneId(null);
       setName("");
       setGrade("");
-      setPrice("");
       cancelPolygonEdit();
       setMessage("좌석 구역을 삭제했습니다.");
       router.refresh();
@@ -570,6 +747,182 @@ export function SeatMapAnalysisPanel({ seatMap }: SeatMapAnalysisPanelProps) {
     }
   }
 
+  function renderZoneEditTools() {
+    if (!isEditMode || zones.length === 0) {
+      return null;
+    }
+
+    return (
+      <div className="grid gap-4">
+        <form
+          className="rounded-lg border bg-secondary/80 p-4"
+          onSubmit={handleSave}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h3 className="font-semibold">선택 구역 수정</h3>
+              {selectedZone ? (
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {selectedZone.name} · {selectedZone.grade}
+                </p>
+              ) : null}
+            </div>
+            {selectedZone &&
+            (isLowConfidence(selectedZone.confidence) ||
+              selectedZone.needsGeometryReview) ? (
+              <span className="shrink-0 rounded-md border border-amber-300 bg-amber-100 px-2 py-1 text-xs text-amber-900">
+                확인 필요
+              </span>
+            ) : null}
+          </div>
+
+          {selectedZone?.needsGeometryReview ? (
+            <p className="mt-3 rounded-md border border-amber-300 bg-amber-100 px-3 py-2 text-xs text-amber-900">
+              이 구역은 정밀 외곽선이 없어 bbox 기준 사각형으로 표시되고
+              있습니다. 외곽선을 수정해 저장하면 티켓팅 연습과 리뷰에
+              반영됩니다.
+            </p>
+          ) : null}
+
+          <div className="mt-4 grid gap-3">
+            <label className="grid gap-1.5 text-sm font-medium">
+              구역명
+              <input
+                className="rounded-md border bg-background px-3 py-2 text-sm"
+                value={name}
+                maxLength={50}
+                onChange={(event) => setName(event.target.value)}
+                disabled={!selectedZone || isMutating}
+              />
+            </label>
+
+            <label className="grid gap-1.5 text-sm font-medium">
+              등급
+              <input
+                className="rounded-md border bg-background px-3 py-2 text-sm"
+                value={grade}
+                maxLength={30}
+                placeholder="미확인, VIP, R, S, A"
+                onChange={(event) => setGrade(event.target.value)}
+                disabled={!selectedZone || isMutating}
+              />
+            </label>
+          </div>
+
+          <div className="mt-4 rounded-md border bg-background p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h4 className="text-sm font-semibold">구역 외곽선</h4>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  외곽선 안쪽을 드래그해 위치를 옮기거나, 점을 드래그해 실제
+                  구역 외곽선에 맞춥니다.
+                </p>
+              </div>
+              {!isEditingPolygon ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={startPolygonEdit}
+                  disabled={!selectedZone || isMutating}
+                >
+                  외곽선 수정
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={cancelPolygonEdit}
+                  disabled={isMutating}
+                >
+                  <X className="h-4 w-4" aria-hidden="true" />
+                  취소
+                </Button>
+              )}
+            </div>
+
+            {isEditingPolygon ? (
+              <div className="mt-3 grid gap-2">
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={addPolygonPoint}
+                    disabled={isMutating}
+                  >
+                    <Plus className="h-4 w-4" aria-hidden="true" />점 추가
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={deleteSelectedPolygonPoint}
+                    disabled={isMutating || selectedPointIndex === null}
+                  >
+                    <Trash2 className="h-4 w-4" aria-hidden="true" />점 삭제
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={resetPolygonToBbox}
+                    disabled={isMutating}
+                  >
+                    <RotateCcw className="h-4 w-4" aria-hidden="true" />
+                    bbox로 초기화
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  현재 {editablePolygon.length}개 점
+                  {selectedPointIndex !== null
+                    ? ` · 선택 점 ${selectedPointIndex + 1}`
+                    : ""}
+                </p>
+              </div>
+            ) : (
+              <p className="mt-3 text-xs text-muted-foreground">
+                {selectedZone?.polygon
+                  ? `${selectedZone.polygon.length}개 점으로 저장된 외곽선을 사용 중입니다.`
+                  : "정밀 외곽선이 없어 bbox 기준 사각형을 사용 중입니다."}
+              </p>
+            )}
+          </div>
+
+          <div className="mt-4 grid gap-2 sm:grid-cols-2">
+            <Button type="submit" disabled={!selectedZone || isMutating}>
+              {isMutating ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Save className="h-4 w-4" aria-hidden="true" />
+              )}
+              저장
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleDelete}
+              disabled={!selectedZone || isMutating}
+            >
+              <Trash2 className="h-4 w-4" aria-hidden="true" />
+              삭제
+            </Button>
+          </div>
+        </form>
+
+        {practiceHref ? (
+          <Button asChild variant="outline" className="h-11">
+            <Link href={practiceHref}>
+              <Ticket className="h-4 w-4" aria-hidden="true" />
+              티켓팅 연습으로 이동
+            </Link>
+          </Button>
+        ) : null}
+      </div>
+    );
+  }
+
   return (
     <section className="rounded-lg border bg-card p-6 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -577,32 +930,40 @@ export function SeatMapAnalysisPanel({ seatMap }: SeatMapAnalysisPanelProps) {
           <p className="text-sm text-muted-foreground">
             현재 상태: {getStatusText(seatMap.analysisStatus)}
           </p>
-          <h2 className="mt-1 text-xl font-black">AI 좌석 구역 분석</h2>
+          <h2 className="mt-1 text-xl font-black">
+            {isAnalysisMode ? "AI 좌석 구역 분석" : "좌석 구역 수정"}
+          </h2>
         </div>
-        <Button type="button" onClick={handleAnalyze} disabled={isPending}>
-          {isPending ? (
-            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-          ) : (
-            <WandSparkles className="h-4 w-4" aria-hidden="true" />
-          )}
-          {getAnalyzeButtonText(seatMap.analysisStatus)}
-        </Button>
+        {isAnalysisMode ? (
+          <Button
+            type="button"
+            onClick={() => {
+              void handleAnalyze();
+            }}
+            disabled={isPending}
+          >
+            {isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <WandSparkles className="h-4 w-4" aria-hidden="true" />
+            )}
+            {isPending
+              ? "AI 좌석 구역 분석 중"
+              : getAnalyzeButtonText(seatMap.analysisStatus)}
+          </Button>
+        ) : analysisHref ? (
+          <Button asChild variant="outline">
+            <Link href={analysisHref}>
+              <WandSparkles className="h-4 w-4" aria-hidden="true" />
+              AI 분석으로 돌아가기
+            </Link>
+          </Button>
+        ) : null}
       </div>
 
-      {seatMap.analysisStatus === "failed" ? (
-        <p className="mt-4 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          이전 분석이 실패했습니다. 이미지를 확인한 뒤 다시 분석할 수 있습니다.
-        </p>
-      ) : null}
-
-      {seatMap.analysisStatus === "success" && zones.length > 0 ? (
-        <p className="mt-4 rounded-md border bg-secondary px-3 py-2 text-sm text-muted-foreground">
-          재분석하면 현재 좌석 구역과 사용자가 수정한 내용이 새 분석 결과로
-          대체됩니다.
-        </p>
-      ) : null}
-
-      {seatMap.analysisStatus === "success" && zones.length > 0 ? (
+      {isEditMode &&
+      seatMap.analysisStatus === "success" &&
+      zones.length > 0 ? (
         <form
           className="mt-4 rounded-lg border bg-secondary/80 p-4"
           onSubmit={handleGenerateSeats}
@@ -654,397 +1015,280 @@ export function SeatMapAnalysisPanel({ seatMap }: SeatMapAnalysisPanelProps) {
         </form>
       ) : null}
 
-      <div className="mt-5 overflow-hidden rounded-lg border bg-secondary">
-        <div className="relative">
-          {/* Keep the rendered bitmap and polygon overlay in the same coordinate space. */}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={seatMap.imageUrl}
-            alt="업로드된 좌석 배치도"
-            className="block h-auto w-full"
-          />
-          <svg
-            ref={svgRef}
-            className="absolute inset-0 h-full w-full touch-none"
-            viewBox="0 0 100 100"
-            preserveAspectRatio="none"
-            aria-label="좌석 구역 외곽선"
-            onPointerMove={handlePolygonPointerMove}
-            onPointerUp={stopDraggingPolygonPoint}
-            onPointerLeave={stopDraggingPolygonPoint}
-          >
-            {zones.map((zone) => {
-              const lowConfidence =
-                isLowConfidence(zone.confidence) || zone.needsGeometryReview;
-              const isSelected = selectedZone?.id === zone.id;
-              const isLockedDuringPolygonEdit = isEditingPolygon && !isSelected;
-              const points =
-                isSelected && isEditingPolygon && editablePolygon.length >= 3
-                  ? editablePolygon
-                  : zone.polygon;
-
-              return (
-                <g
-                  key={zone.id}
-                  className={[
-                    "transition",
-                    isLockedDuringPolygonEdit
-                      ? "pointer-events-none opacity-35"
-                      : "cursor-pointer",
-                    isSelected && !lowConfidence
-                      ? "fill-primary/25 stroke-primary"
-                      : isSelected && lowConfidence
-                        ? "fill-amber-400/25 stroke-amber-600"
-                        : lowConfidence
-                          ? "fill-amber-400/15 stroke-amber-500 hover:fill-amber-400/25"
-                          : "fill-emerald-400/15 stroke-emerald-500 hover:fill-emerald-400/25",
-                  ].join(" ")}
-                  role="button"
-                  tabIndex={isLockedDuringPolygonEdit ? -1 : 0}
-                  aria-disabled={isLockedDuringPolygonEdit}
-                  aria-label={`${zone.name} ${zone.grade}`}
-                  onClick={() => selectZone(zone)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      selectZone(zone);
-                    }
-                  }}
-                >
-                  <title>
-                    {zone.name} {zone.grade}
-                    {zone.needsGeometryReview ? " - 외곽선 확인 필요" : ""}
-                  </title>
-                  {points ? (
-                    <polygon
-                      points={getPolygonPointsAttribute(points)}
-                      strokeWidth={isSelected ? 0.9 : 0.6}
-                      vectorEffect="non-scaling-stroke"
+      <div
+        className={
+          isAnalysisMode
+            ? "mt-4 grid gap-4 lg:grid-cols-2 lg:items-stretch"
+            : isEditMode
+              ? "mt-5 grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start"
+              : "mt-5"
+        }
+      >
+        {isAnalysisMode ? (
+          <section className="flex h-[clamp(240px,calc(100vh-540px),360px)] flex-col justify-between rounded-lg border bg-secondary/80 p-4">
+            <div>
+              <p className="text-sm font-semibold text-muted-foreground">
+                AI 분석 진행률
+              </p>
+              <div className="mt-5 flex justify-center">
+                <div className="relative h-32 w-32">
+                  <svg
+                    className="h-full w-full -rotate-90"
+                    viewBox="0 0 100 100"
+                    aria-hidden="true"
+                  >
+                    <circle
+                      cx="50"
+                      cy="50"
+                      r={DONUT_RADIUS}
+                      className="fill-none stroke-background"
+                      strokeWidth="9"
                     />
-                  ) : (
-                    <rect
-                      x={zone.bbox.x * 100}
-                      y={zone.bbox.y * 100}
-                      width={zone.bbox.width * 100}
-                      height={zone.bbox.height * 100}
-                      strokeWidth={isSelected ? 0.9 : 0.6}
-                      vectorEffect="non-scaling-stroke"
+                    <circle
+                      cx="50"
+                      cy="50"
+                      r={DONUT_RADIUS}
+                      className="fill-none stroke-primary transition-all duration-500"
+                      strokeWidth="9"
+                      strokeLinecap="round"
+                      strokeDasharray={DONUT_CIRCUMFERENCE}
+                      strokeDashoffset={donutStrokeOffset}
                     />
-                  )}
-                </g>
-              );
-            })}
+                  </svg>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center">
+                    <span className="text-3xl font-black text-primary">
+                      {displayedAnalysisProgress}%
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <p className="mt-5 text-center text-sm leading-6 text-muted-foreground">
+                {analysisProgressDescription}
+              </p>
+            </div>
 
-            {isEditingPolygon
-              ? editablePolygon.map((point, index) => (
-                  <circle
-                    key={`${index}-${point.x}-${point.y}`}
-                    cx={point.x * 100}
-                    cy={point.y * 100}
-                    r={selectedPointIndex === index ? 1.5 : 1.1}
+            <div className="grid gap-2">
+              {displayedZoneCount > 0 ? (
+                <p className="rounded-md border bg-background px-3 py-2 text-center text-sm font-semibold">
+                  {displayedZoneCount.toLocaleString("ko-KR")}개 구역 추출 완료
+                </p>
+              ) : null}
+              {message ? (
+                <p className="line-clamp-2 rounded-md border bg-background px-3 py-2 text-sm text-muted-foreground">
+                  {message}
+                </p>
+              ) : null}
+              {displayedZoneCount > 0 && editHref ? (
+                <Button asChild className="w-full">
+                  <Link href={editHref}>구역 수정으로 이동</Link>
+                </Button>
+              ) : null}
+            </div>
+          </section>
+        ) : null}
+
+        <div
+          className={[
+            "overflow-hidden rounded-lg border bg-secondary",
+            isAnalysisMode ? "h-[clamp(240px,calc(100vh-540px),360px)]" : "",
+          ].join(" ")}
+        >
+          <div className="relative h-full">
+            {/* Keep the rendered bitmap and polygon overlay in the same coordinate space. */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={seatMap.imageUrl}
+              alt="업로드된 좌석 배치도"
+              className={
+                isAnalysisMode
+                  ? "block h-full w-full object-contain"
+                  : "block h-auto w-full"
+              }
+            />
+            <svg
+              ref={svgRef}
+              className="absolute inset-0 h-full w-full touch-none"
+              viewBox={
+                isAnalysisMode
+                  ? `0 0 ${imageWidth} ${imageHeight}`
+                  : "0 0 100 100"
+              }
+              preserveAspectRatio={isAnalysisMode ? "xMidYMid meet" : "none"}
+              aria-label="좌석 구역 외곽선"
+              onPointerMove={handlePolygonPointerMove}
+              onPointerUp={stopDraggingPolygonPoint}
+              onPointerLeave={stopDraggingPolygonPoint}
+            >
+              {zones.map((zone) => {
+                const lowConfidence =
+                  isLowConfidence(zone.confidence) || zone.needsGeometryReview;
+                const isSelected = selectedZone?.id === zone.id;
+                const isLockedDuringPolygonEdit =
+                  isEditingPolygon && !isSelected;
+                const points =
+                  isSelected && isEditingPolygon && editablePolygon.length >= 3
+                    ? editablePolygon
+                    : zone.polygon;
+
+                return (
+                  <g
+                    key={zone.id}
                     className={[
-                      "cursor-grab stroke-background",
-                      selectedPointIndex === index
-                        ? "fill-primary"
-                        : "fill-background",
+                      "transition",
+                      isLockedDuringPolygonEdit
+                        ? "pointer-events-none opacity-35"
+                        : isSelected && isEditingPolygon
+                          ? "cursor-move"
+                          : "cursor-pointer",
+                      isSelected && !lowConfidence
+                        ? "fill-primary/25 stroke-primary"
+                        : isSelected && lowConfidence
+                          ? "fill-amber-400/25 stroke-amber-600"
+                          : lowConfidence
+                            ? "fill-amber-400/15 stroke-amber-500 hover:fill-amber-400/25"
+                            : "fill-emerald-400/15 stroke-emerald-500 hover:fill-emerald-400/25",
                     ].join(" ")}
-                    strokeWidth={0.45}
-                    vectorEffect="non-scaling-stroke"
-                    onPointerDown={(event) =>
-                      handlePolygonPointPointerDown(event, index)
-                    }
-                  />
-                ))
-              : null}
-          </svg>
+                    role="button"
+                    tabIndex={isLockedDuringPolygonEdit ? -1 : 0}
+                    aria-disabled={isLockedDuringPolygonEdit}
+                    aria-label={`${zone.name} ${zone.grade}`}
+                    onClick={() => {
+                      if (isSelected && isEditingPolygon) {
+                        return;
+                      }
 
-          {zones.map((zone) => {
-            const isSelected = selectedZone?.id === zone.id;
+                      selectZone(zone);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        selectZone(zone);
+                      }
+                    }}
+                  >
+                    <title>
+                      {`${zone.name} ${zone.grade}${zone.needsGeometryReview ? " - 외곽선 확인 필요" : ""}`}
+                    </title>
+                    {points ? (
+                      <polygon
+                        onPointerDown={(event) =>
+                          handlePolygonShapePointerDown(event, zone)
+                        }
+                        points={
+                          isAnalysisMode
+                            ? getImageSpacePolygonPointsAttribute(
+                                points,
+                                imageWidth,
+                                imageHeight,
+                              )
+                            : getPolygonPointsAttribute(points)
+                        }
+                        strokeWidth={isSelected ? 0.9 : 0.6}
+                        vectorEffect="non-scaling-stroke"
+                      />
+                    ) : (
+                      <rect
+                        onPointerDown={(event) =>
+                          handlePolygonShapePointerDown(event, zone)
+                        }
+                        x={zone.bbox.x * (isAnalysisMode ? imageWidth : 100)}
+                        y={zone.bbox.y * (isAnalysisMode ? imageHeight : 100)}
+                        width={
+                          zone.bbox.width * (isAnalysisMode ? imageWidth : 100)
+                        }
+                        height={
+                          zone.bbox.height *
+                          (isAnalysisMode ? imageHeight : 100)
+                        }
+                        strokeWidth={isSelected ? 0.9 : 0.6}
+                        vectorEffect="non-scaling-stroke"
+                      />
+                    )}
+                  </g>
+                );
+              })}
 
-            if (isEditingPolygon && !isSelected) {
-              return null;
-            }
+              {isEditingPolygon
+                ? editablePolygon.map((point, index) => (
+                    <circle
+                      key={`${index}-${point.x}-${point.y}`}
+                      cx={point.x * (isAnalysisMode ? imageWidth : 100)}
+                      cy={point.y * (isAnalysisMode ? imageHeight : 100)}
+                      r={selectedPointIndex === index ? 1.5 : 1.1}
+                      className={[
+                        "cursor-grab stroke-background",
+                        selectedPointIndex === index
+                          ? "fill-primary"
+                          : "fill-background",
+                      ].join(" ")}
+                      strokeWidth={0.45}
+                      vectorEffect="non-scaling-stroke"
+                      onPointerDown={(event) =>
+                        handlePolygonPointPointerDown(event, index)
+                      }
+                    />
+                  ))
+                : null}
+            </svg>
 
-            return (
-              <button
-                key={`${zone.id}-label`}
-                type="button"
-                title={
-                  zone.needsGeometryReview
-                    ? `${zone.name} ${zone.grade} - 외곽선 확인 필요`
-                    : `${zone.name} ${zone.grade}`
-                }
-                className={[
-                  "absolute z-10 max-w-40 rounded-md border bg-background/95 px-2 py-1 text-left text-[11px] font-medium shadow-sm transition",
-                  isEditingPolygon ? "pointer-events-none opacity-80" : "",
-                  isSelected && !zone.needsGeometryReview
-                    ? "border-primary text-primary"
-                    : isSelected
-                      ? "border-amber-600 text-amber-700"
-                      : zone.needsGeometryReview
-                        ? "border-amber-400 text-amber-700 hover:border-amber-600"
-                        : "hover:border-primary/60",
-                ].join(" ")}
-                style={{
-                  left: `${zone.labelPoint.x * 100}%`,
-                  top: `${zone.labelPoint.y * 100}%`,
-                  transform: "translate(-50%, -50%)",
-                }}
-                onClick={() => selectZone(zone)}
-              >
-                <span className="block truncate">
-                  {zone.name} · {zone.grade}
-                </span>
-                {zone.needsGeometryReview ? (
-                  <span className="block truncate text-amber-700">
-                    확인 필요
-                  </span>
-                ) : null}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {zones.length > 0 ? (
-        <div className="mt-5 grid gap-5 lg:grid-cols-[1fr_320px]">
-          <div className="grid gap-2 text-sm">
             {zones.map((zone) => {
-              const lowConfidence =
-                isLowConfidence(zone.confidence) || zone.needsGeometryReview;
               const isSelected = selectedZone?.id === zone.id;
-              const isLockedDuringPolygonEdit = isEditingPolygon && !isSelected;
+
+              if (isAnalysisMode || (isEditingPolygon && !isSelected)) {
+                return null;
+              }
 
               return (
                 <button
-                  key={zone.id}
+                  key={`${zone.id}-label`}
                   type="button"
-                  onClick={() => selectZone(zone)}
-                  disabled={isLockedDuringPolygonEdit}
+                  title={
+                    zone.needsGeometryReview
+                      ? `${zone.name} ${zone.grade} - 외곽선 확인 필요`
+                      : `${zone.name} ${zone.grade}`
+                  }
                   className={[
-                    "flex flex-wrap items-center justify-between gap-2 rounded-md border bg-background px-3 py-2 text-left transition",
-                    isSelected ? "border-primary bg-primary/5" : "",
-                    isLockedDuringPolygonEdit
-                      ? "cursor-not-allowed opacity-45"
-                      : "hover:border-primary/60",
+                    "absolute z-10 max-w-40 rounded-md border bg-background/95 px-2 py-1 text-left text-[11px] font-medium shadow-sm transition",
+                    isEditingPolygon ? "pointer-events-none opacity-80" : "",
+                    isSelected && !zone.needsGeometryReview
+                      ? "border-primary text-primary"
+                      : isSelected
+                        ? "border-amber-600 text-amber-700"
+                        : zone.needsGeometryReview
+                          ? "border-amber-400 text-amber-700 hover:border-amber-600"
+                          : "hover:border-primary/60",
                   ].join(" ")}
+                  style={{
+                    left: `${zone.labelPoint.x * 100}%`,
+                    top: `${zone.labelPoint.y * 100}%`,
+                    transform: "translate(-50%, -50%)",
+                  }}
+                  onClick={() => selectZone(zone)}
                 >
-                  <span className="font-medium">
+                  <span className="block truncate">
                     {zone.name} · {zone.grade}
-                    {!zone.isAiGenerated ? (
-                      <span className="ml-2 text-xs text-primary">
-                        사용자 수정됨
-                      </span>
-                    ) : null}
                   </span>
-                  <span className="text-muted-foreground">
-                    {formatPrice(zone.price)} · 신뢰도{" "}
-                    {typeof zone.confidence === "number"
-                      ? `${Math.round(zone.confidence * 100)}%`
-                      : "확인 필요"}
-                    {zone.allocatedSeatCount
-                      ? ` · 배분 ${zone.allocatedSeatCount.toLocaleString("ko-KR")}석`
-                      : ""}
-                    {lowConfidence ? " · 확인 필요" : ""}
-                    {zone.needsGeometryReview ? " · 외곽선 확인 필요" : ""}
-                  </span>
+                  {zone.needsGeometryReview ? (
+                    <span className="block truncate text-amber-700">
+                      확인 필요
+                    </span>
+                  ) : null}
                 </button>
               );
             })}
           </div>
-
-          <div className="grid gap-4">
-            <form
-              className="rounded-lg border bg-secondary/80 p-4"
-              onSubmit={handleSave}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h3 className="font-semibold">선택 구역 수정</h3>
-                  {selectedZone ? (
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      {selectedZone.name} · {selectedZone.grade}
-                    </p>
-                  ) : null}
-                </div>
-                {selectedZone &&
-                (isLowConfidence(selectedZone.confidence) ||
-                  selectedZone.needsGeometryReview) ? (
-                  <span className="shrink-0 rounded-md border border-amber-300 bg-amber-100 px-2 py-1 text-xs text-amber-900">
-                    확인 필요
-                  </span>
-                ) : null}
-              </div>
-
-              {selectedZone?.needsGeometryReview ? (
-                <p className="mt-3 rounded-md border border-amber-300 bg-amber-100 px-3 py-2 text-xs text-amber-900">
-                  이 구역은 정밀 외곽선이 없어 bbox 기준 사각형으로 표시되고
-                  있습니다. 외곽선을 수정해 저장하면 티켓팅 연습과 리뷰에
-                  반영됩니다.
-                </p>
-              ) : null}
-
-              <div className="mt-4 grid gap-3">
-                <label className="grid gap-1.5 text-sm font-medium">
-                  구역명
-                  <input
-                    className="rounded-md border bg-background px-3 py-2 text-sm"
-                    value={name}
-                    maxLength={50}
-                    onChange={(event) => setName(event.target.value)}
-                    disabled={!selectedZone || isMutating}
-                  />
-                </label>
-
-                <label className="grid gap-1.5 text-sm font-medium">
-                  등급
-                  <input
-                    className="rounded-md border bg-background px-3 py-2 text-sm"
-                    value={grade}
-                    maxLength={30}
-                    placeholder="미확인, VIP, R, S, A"
-                    onChange={(event) => setGrade(event.target.value)}
-                    disabled={!selectedZone || isMutating}
-                  />
-                </label>
-
-                <label className="grid gap-1.5 text-sm font-medium">
-                  가격
-                  <input
-                    className="rounded-md border bg-background px-3 py-2 text-sm"
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    value={price}
-                    placeholder="예: 165000"
-                    onChange={(event) =>
-                      setPrice(event.target.value.replace(/[^0-9]/g, ""))
-                    }
-                    disabled={!selectedZone || isMutating}
-                  />
-                </label>
-              </div>
-
-              <div className="mt-4 rounded-md border bg-background p-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <h4 className="text-sm font-semibold">구역 외곽선</h4>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      점을 드래그해 실제 구역 외곽선에 맞춥니다.
-                    </p>
-                  </div>
-                  {!isEditingPolygon ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={startPolygonEdit}
-                      disabled={!selectedZone || isMutating}
-                    >
-                      외곽선 수정
-                    </Button>
-                  ) : (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={cancelPolygonEdit}
-                      disabled={isMutating}
-                    >
-                      <X className="h-4 w-4" aria-hidden="true" />
-                      취소
-                    </Button>
-                  )}
-                </div>
-
-                {isEditingPolygon ? (
-                  <div className="mt-3 grid gap-2">
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={addPolygonPoint}
-                        disabled={isMutating}
-                      >
-                        <Plus className="h-4 w-4" aria-hidden="true" />점 추가
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={deleteSelectedPolygonPoint}
-                        disabled={isMutating || selectedPointIndex === null}
-                      >
-                        <Trash2 className="h-4 w-4" aria-hidden="true" />점 삭제
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={resetPolygonToBbox}
-                        disabled={isMutating}
-                      >
-                        <RotateCcw className="h-4 w-4" aria-hidden="true" />
-                        bbox로 초기화
-                      </Button>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      현재 {editablePolygon.length}개 점
-                      {selectedPointIndex !== null
-                        ? ` · 선택 점 ${selectedPointIndex + 1}`
-                        : ""}
-                    </p>
-                  </div>
-                ) : (
-                  <p className="mt-3 text-xs text-muted-foreground">
-                    {selectedZone?.polygon
-                      ? `${selectedZone.polygon.length}개 점으로 저장된 외곽선을 사용 중입니다.`
-                      : "정밀 외곽선이 없어 bbox 기준 사각형을 사용 중입니다."}
-                  </p>
-                )}
-              </div>
-
-              <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                <Button type="submit" disabled={!selectedZone || isMutating}>
-                  {isMutating ? (
-                    <Loader2
-                      className="h-4 w-4 animate-spin"
-                      aria-hidden="true"
-                    />
-                  ) : (
-                    <Save className="h-4 w-4" aria-hidden="true" />
-                  )}
-                  저장
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleDelete}
-                  disabled={!selectedZone || isMutating}
-                >
-                  <Trash2 className="h-4 w-4" aria-hidden="true" />
-                  삭제
-                </Button>
-              </div>
-            </form>
-
-            <section className="rounded-md border bg-secondary p-4">
-              <h3 className="font-semibold">티켓팅 연습 반영</h3>
-              <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                {selectedZone
-                  ? `${selectedZone.name} 구역은 저장된 외곽선과 크기를 기준으로 좌석 선택 연습에 자동 반영됩니다.`
-                  : "좌석 구역을 선택하면 연습 화면에 반영될 기준 정보를 확인할 수 있습니다."}
-              </p>
-            </section>
-          </div>
         </div>
-      ) : (
-        <p className="mt-4 text-sm text-muted-foreground">
-          분석을 실행하면 좌석 배치도 위에 구역 후보가 표시됩니다.
-        </p>
-      )}
 
-      {message ? (
+        {renderZoneEditTools()}
+      </div>
+
+      {zones.length === 0 && isEditMode ? (
+        <p className="mt-4 text-sm text-muted-foreground">
+          수정할 구역이 없습니다. AI 분석 페이지에서 구역을 먼저 추출해주세요.
+        </p>
+      ) : null}
+
+      {!isAnalysisMode && message ? (
         <p className="mt-4 rounded-md border bg-secondary px-3 py-2 text-sm text-muted-foreground">
           {message}
         </p>
