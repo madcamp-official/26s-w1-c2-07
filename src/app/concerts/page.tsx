@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { getCurrentUser } from "@/lib/auth";
 import {
   getConcertFilterOptions,
   getConcertList,
@@ -154,7 +155,10 @@ function ConcertPoster({ src, title }: { src: string | null; title: string }) {
 export default async function ConcertListPage({
   searchParams,
 }: ConcertListPageProps) {
-  const resolvedSearchParams = await searchParams;
+  const [resolvedSearchParams, user] = await Promise.all([
+    searchParams,
+    getCurrentUser(),
+  ]);
   const scope = parseScope(resolvedSearchParams?.scope);
   const requestedPage = parsePage(resolvedSearchParams?.page);
   const filters = {
@@ -166,6 +170,7 @@ export default async function ConcertListPage({
     getConcertList({
       scope,
       ...filters,
+      seatMapOwnerId: user?.id ?? null,
     }),
     getConcertFilterOptions({
       scope,
@@ -338,76 +343,90 @@ export default async function ConcertListPage({
 
       {visibleConcerts.length > 0 ? (
         <section className="mt-5 grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
-          {visibleConcerts.map((concert) => (
-            <article
-              key={concert.id}
-              className="overflow-hidden rounded-lg border bg-card shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
-            >
-              <div className="relative">
-                <Link href={`/concerts/${concert.id}`}>
-                  <ConcertPoster
-                    src={concert.posterImageUrl}
-                    title={concert.title}
-                  />
-                </Link>
-                <span className="absolute left-3 top-3 rounded-md bg-primary px-2.5 py-1 text-xs font-bold text-primary-foreground">
-                  공연 정보
-                </span>
-              </div>
+          {visibleConcerts.map((concert) => {
+            const seatMapHref = !concert.hasSeatMap
+              ? `/concerts/${concert.id}/seat-map/upload`
+              : concert.latestSeatMapStatus === "success"
+                ? `/concerts/${concert.id}/seat-map/edit`
+                : `/concerts/${concert.id}/seat-map/analysis`;
 
-              <div className="space-y-4 p-4">
-                <div>
-                  <p className="text-sm font-bold text-primary">
-                    {concert.artist}
-                  </p>
-                  <h3 className="mt-1 line-clamp-2 min-h-12 text-base font-black leading-6">
-                    {concert.title}
-                  </h3>
+            return (
+              <article
+                key={concert.id}
+                className="overflow-hidden rounded-lg border bg-card shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+              >
+                <div className="relative">
+                  <Link href={`/concerts/${concert.id}`}>
+                    <ConcertPoster
+                      src={concert.posterImageUrl}
+                      title={concert.title}
+                    />
+                  </Link>
+                  <span className="absolute left-3 top-3 rounded-md bg-primary px-2.5 py-1 text-xs font-bold text-primary-foreground">
+                    공연 정보
+                  </span>
                 </div>
 
-                <div className="space-y-1.5 text-xs text-muted-foreground">
-                  <p className="flex items-center gap-1.5">
-                    <CalendarDays className="h-3.5 w-3.5" aria-hidden="true" />
-                    {formatDateRange(concert.startDate, concert.endDate)}
-                  </p>
-                  <p className="flex items-center gap-1.5">
-                    <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
-                    {concert.region} · {concert.venueName}
-                  </p>
-                </div>
+                <div className="space-y-4 p-4">
+                  <div>
+                    <p className="text-sm font-bold text-primary">
+                      {concert.artist}
+                    </p>
+                    <h3 className="mt-1 line-clamp-2 min-h-12 text-base font-black leading-6">
+                      {concert.title}
+                    </h3>
+                  </div>
 
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <Button asChild variant="outline" size="sm">
-                    <Link href={`/concerts/${concert.id}`}>
-                      <Info className="h-3.5 w-3.5" aria-hidden="true" />
-                      상세보기
-                    </Link>
-                  </Button>
-                  <Button asChild variant="outline" size="sm">
-                    <Link href={`/concerts/${concert.id}/seat-map`}>
-                      <UploadCloud className="h-3.5 w-3.5" aria-hidden="true" />
-                      배치도 등록
-                    </Link>
-                  </Button>
-                  <Button asChild size="sm">
-                    <Link href={`/concerts/${concert.id}/practice`}>
-                      <Ticket className="h-3.5 w-3.5" aria-hidden="true" />
-                      티켓팅 연습
-                    </Link>
-                  </Button>
-                  <Button asChild variant="outline" size="sm">
-                    <Link href={`/reviews?concertId=${concert.id}`}>
-                      <MessageSquare
+                  <div className="space-y-1.5 text-xs text-muted-foreground">
+                    <p className="flex items-center gap-1.5">
+                      <CalendarDays
                         className="h-3.5 w-3.5"
                         aria-hidden="true"
                       />
-                      좌석 리뷰
-                    </Link>
-                  </Button>
+                      {formatDateRange(concert.startDate, concert.endDate)}
+                    </p>
+                    <p className="flex items-center gap-1.5">
+                      <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
+                      {concert.region} · {concert.venueName}
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <Button asChild variant="outline" size="sm">
+                      <Link href={`/concerts/${concert.id}`}>
+                        <Info className="h-3.5 w-3.5" aria-hidden="true" />
+                        상세보기
+                      </Link>
+                    </Button>
+                    <Button asChild variant="outline" size="sm">
+                      <Link href={seatMapHref}>
+                        <UploadCloud
+                          className="h-3.5 w-3.5"
+                          aria-hidden="true"
+                        />
+                        배치도 등록
+                      </Link>
+                    </Button>
+                    <Button asChild size="sm">
+                      <Link href={`/practice?concertId=${concert.id}`}>
+                        <Ticket className="h-3.5 w-3.5" aria-hidden="true" />
+                        티켓팅 연습
+                      </Link>
+                    </Button>
+                    <Button asChild variant="outline" size="sm">
+                      <Link href={`/reviews?concertId=${concert.id}`}>
+                        <MessageSquare
+                          className="h-3.5 w-3.5"
+                          aria-hidden="true"
+                        />
+                        좌석 리뷰
+                      </Link>
+                    </Button>
+                  </div>
                 </div>
-              </div>
-            </article>
-          ))}
+              </article>
+            );
+          })}
         </section>
       ) : (
         <section className="mt-6 rounded-lg border bg-card p-10 text-center shadow-sm">

@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { getCurrentUser } from "@/lib/auth";
 import { getConcertDetail } from "@/lib/concerts";
 import { formatDateRange } from "@/utils/format";
 
@@ -89,13 +90,26 @@ export default async function ConcertDetailPage({
     notFound();
   }
 
-  const concert = await getConcertDetail(parsedConcertId.data);
+  const user = await getCurrentUser();
+  const concert = await getConcertDetail(parsedConcertId.data, {
+    seatMapOwnerId: user?.id ?? null,
+  });
 
   if (!concert) {
     notFound();
   }
 
-  const practiceHref = `/concerts/${concert.id}/practice`;
+  const isSeatMapAnalyzed =
+    concert.latestSeatMap?.analysisStatus === "success" &&
+    concert.latestSeatMap.zoneCount > 0;
+  const seatMapHref = !concert.hasSeatMap
+    ? `/concerts/${concert.id}/seat-map/upload`
+    : isSeatMapAnalyzed
+      ? `/concerts/${concert.id}/seat-map/edit`
+      : `/concerts/${concert.id}/seat-map/analysis`;
+  const practiceHref = isSeatMapAnalyzed
+    ? `/practice?concertId=${concert.id}`
+    : seatMapHref;
   const concertDateRange = formatDateRange(concert.startDate, concert.endDate);
   const infoRows = [
     {
@@ -206,7 +220,7 @@ export default async function ConcertDetailPage({
 
         <aside className="space-y-5 lg:border-l lg:pl-10">
           <ActionCard
-            href={`/concerts/${concert.id}/seat-map`}
+            href={seatMapHref}
             icon={<ImageUp className="h-8 w-8" aria-hidden="true" />}
             title="배치도 등록"
             description="공연장의 좌석 배치도를 등록하고 AI 분석 결과를 확인하세요."

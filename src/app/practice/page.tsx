@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { CalendarDays, ImageUp, MapPin, Ticket } from "lucide-react";
+import { z } from "zod";
 
 import { PracticeWorkspaceClient } from "@/app/practice/practice-workspace-client";
 import { RegisteredConcertWorkspace } from "@/components/registered-concert-workspace";
@@ -8,11 +9,14 @@ import { Button } from "@/components/ui/button";
 import { getCurrentUser } from "@/lib/auth";
 import {
   getRegisteredConcertsForUser,
-  getRegisteredPracticeConcert,
+  getRegisteredConcertSummaryForUser,
   type RegisteredConcertSummary,
+  getRegisteredPracticeConcert,
 } from "@/lib/registered-concerts";
 import { getVirtualSeatReadinessForSeatMap } from "@/lib/virtual-seats";
 import { formatDateRange } from "@/utils/format";
+
+const requestedConcertIdSchema = z.string().uuid();
 
 type PracticeHubPageProps = {
   searchParams?: Promise<{
@@ -21,7 +25,7 @@ type PracticeHubPageProps = {
 };
 
 function getSelectedConcertId(
-  concerts: Awaited<ReturnType<typeof getRegisteredConcertsForUser>>,
+  concerts: RegisteredConcertSummary[],
   requestedConcertId: string | undefined,
 ) {
   return (
@@ -72,6 +76,12 @@ function PracticePreparationState({
   hasZones: boolean;
   hasPracticeSeats: boolean;
 }) {
+  const seatMapHref = !hasSeatMap
+    ? `/concerts/${concertId}/seat-map/upload`
+    : hasZones
+      ? `/concerts/${concertId}/seat-map/edit`
+      : `/concerts/${concertId}/seat-map/analysis`;
+
   return (
     <section className="rounded-lg border bg-card p-5 shadow-sm">
       <div className="flex items-start gap-4">
@@ -101,7 +111,7 @@ function PracticePreparationState({
 
       <div className="mt-6 flex flex-wrap gap-2">
         <Button asChild>
-          <Link href={`/concerts/${concertId}/seat-map`}>
+          <Link href={seatMapHref}>
             <ImageUp className="h-4 w-4" aria-hidden="true" />
             좌석 배치도 확인하기
           </Link>
@@ -184,12 +194,42 @@ export default async function PracticeHubPage({
   }
 
   const registeredConcerts = await getRegisteredConcertsForUser(user.id);
-  const selectedConcertId = getSelectedConcertId(
-    registeredConcerts,
+  const parsedRequestedConcertId = requestedConcertIdSchema.safeParse(
     resolvedSearchParams?.concertId,
   );
+  const requestedConcertId = parsedRequestedConcertId.success
+    ? parsedRequestedConcertId.data
+    : undefined;
+
+  let visibleRegisteredConcerts = registeredConcerts;
+
+  if (
+    requestedConcertId &&
+    !visibleRegisteredConcerts.some(
+      (concert) => concert.id === requestedConcertId,
+    )
+  ) {
+    const requestedConcert = await getRegisteredConcertSummaryForUser(
+      user.id,
+      requestedConcertId,
+    );
+
+    if (requestedConcert) {
+      visibleRegisteredConcerts = [
+        requestedConcert,
+        ...visibleRegisteredConcerts,
+      ];
+    }
+  }
+
+  const selectedConcertId = getSelectedConcertId(
+    visibleRegisteredConcerts,
+    requestedConcertId,
+  );
   const selectedConcertSummary =
-    registeredConcerts.find((concert) => concert.id === selectedConcertId) ??
+    visibleRegisteredConcerts.find(
+      (concert) => concert.id === selectedConcertId,
+    ) ??
     null;
   const selectedConcert = selectedConcertId
     ? await getRegisteredPracticeConcert(user.id, selectedConcertId)
@@ -223,7 +263,7 @@ export default async function PracticeHubPage({
       description="내가 등록한 좌석 배치도를 기준으로 실전 예매 흐름을 연습하세요."
       sidebarTitle="내가 등록한 배치도"
       showTip={false}
-      concerts={registeredConcerts}
+      concerts={visibleRegisteredConcerts}
       selectedConcertId={selectedConcertId}
       sidebarListSize="three"
       emptyTitle="아직 등록한 좌석 배치도가 없습니다"

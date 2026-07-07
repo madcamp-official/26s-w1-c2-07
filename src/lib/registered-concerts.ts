@@ -93,6 +93,77 @@ export async function getRegisteredConcertsForUser(userId: string) {
   return Array.from(concertsById.values());
 }
 
+export async function getRegisteredConcertSummaryForUser(
+  userId: string,
+  concertId: string,
+) {
+  const seatMap = await prisma.seatMap.findFirst({
+    where: {
+      concertId,
+      createdBy: userId,
+      concert: {
+        isVisible: true,
+      },
+    },
+    orderBy: {
+      createdAt: "desc",
+    },
+    select: {
+      id: true,
+      imageUrl: true,
+      analysisStatus: true,
+      createdAt: true,
+      _count: {
+        select: {
+          zones: true,
+        },
+      },
+      concert: {
+        select: {
+          id: true,
+          title: true,
+          artist: true,
+          venueName: true,
+          region: true,
+          startDate: true,
+          endDate: true,
+          posterImageUrl: true,
+          _count: {
+            select: {
+              reviews: true,
+              schedules: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (!seatMap) {
+    return null;
+  }
+
+  return {
+    id: seatMap.concert.id,
+    title: seatMap.concert.title,
+    artist: seatMap.concert.artist,
+    venueName: seatMap.concert.venueName,
+    region: seatMap.concert.region,
+    startDate: seatMap.concert.startDate,
+    endDate: seatMap.concert.endDate,
+    posterImageUrl: seatMap.concert.posterImageUrl,
+    reviewCount: seatMap.concert._count.reviews,
+    scheduleCount: seatMap.concert._count.schedules,
+    latestSeatMap: {
+      id: seatMap.id,
+      imageUrl: seatMap.imageUrl,
+      analysisStatus: seatMap.analysisStatus,
+      createdAt: seatMap.createdAt,
+      zoneCount: seatMap._count.zones,
+    },
+  } satisfies RegisteredConcertSummary;
+}
+
 export async function getRegisteredPracticeConcert(
   userId: string,
   concertId: string,

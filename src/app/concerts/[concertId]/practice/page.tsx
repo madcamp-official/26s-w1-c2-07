@@ -132,6 +132,11 @@ export default async function PracticePage({ params }: PracticePageProps) {
   }
 
   if (!latestSeatMap || !hasZones || !isPracticeReady) {
+    const seatMapHref =
+      latestSeatMap && hasZones
+        ? `/concerts/${concert.id}/seat-map/edit`
+        : `/concerts/${concert.id}/seat-map/analysis`;
+
     return (
       <main className="mx-auto w-full max-w-4xl px-6 py-8">
         <Button asChild variant="ghost" size="sm">
@@ -167,7 +172,7 @@ export default async function PracticePage({ params }: PracticePageProps) {
 
           <div className="mt-6 flex flex-wrap gap-2">
             <Button asChild>
-              <Link href={`/concerts/${concert.id}/seat-map`}>
+              <Link href={seatMapHref}>
                 <ImageUp className="h-4 w-4" aria-hidden="true" />
                 좌석 배치도 확인하기
               </Link>
