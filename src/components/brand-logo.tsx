@@ -21,7 +21,7 @@ export function BrandLogo({ className }: BrandLogoProps) {
       </span>
       <span className="leading-none">
         <span className="block text-lg font-black tracking-normal">
-          포도알연구소
+          GrapeRush
         </span>
       </span>
     </Link>
