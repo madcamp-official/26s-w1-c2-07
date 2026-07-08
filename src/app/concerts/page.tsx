@@ -16,6 +16,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { getCurrentUser } from "@/lib/auth";
 import {
+  getConcertCount,
   getConcertFilterOptions,
   getConcertList,
   type ConcertListScope,
@@ -166,31 +167,42 @@ export default async function ConcertListPage({
     region: parseFilterValue(resolvedSearchParams?.region, 50),
     genre: parseFilterValue(resolvedSearchParams?.genre, 50),
   };
-  const [concerts, filterOptions] = await Promise.all([
-    getConcertList({
-      scope,
-      ...filters,
-      seatMapOwnerId: user?.id ?? null,
-    }),
-    getConcertFilterOptions({
-      scope,
-    }),
-  ]);
-  const hasActiveFilters = Boolean(
-    filters.q || filters.region || filters.genre,
-  );
-  const resetHref = getConcertScopeHref(scope, {});
-  const countLabel = hasActiveFilters ? "검색 결과" : "등록된 공연";
-  const totalConcertCount = concerts.length;
+  const listOptions = {
+    scope,
+    ...filters,
+    seatMapOwnerId: user?.id ?? null,
+  };
+  const requestedSkip = (requestedPage - 1) * CONCERT_PAGE_SIZE;
+  const [totalConcertCount, requestedConcerts, filterOptions] =
+    await Promise.all([
+      getConcertCount(listOptions),
+      getConcertList({
+        ...listOptions,
+        skip: requestedSkip,
+        take: CONCERT_PAGE_SIZE,
+      }),
+      getConcertFilterOptions({
+        scope,
+      }),
+    ]);
   const totalPages = Math.max(
     1,
     Math.ceil(totalConcertCount / CONCERT_PAGE_SIZE),
   );
   const page = Math.min(requestedPage, totalPages);
-  const visibleConcerts = concerts.slice(
-    (page - 1) * CONCERT_PAGE_SIZE,
-    page * CONCERT_PAGE_SIZE,
+  const visibleConcerts =
+    page === requestedPage
+      ? requestedConcerts
+      : await getConcertList({
+          ...listOptions,
+          skip: (page - 1) * CONCERT_PAGE_SIZE,
+          take: CONCERT_PAGE_SIZE,
+        });
+  const hasActiveFilters = Boolean(
+    filters.q || filters.region || filters.genre,
   );
+  const resetHref = getConcertScopeHref(scope, {});
+  const countLabel = hasActiveFilters ? "검색 결과" : "등록된 공연";
   const firstConcertNumber =
     totalConcertCount === 0 ? 0 : (page - 1) * CONCERT_PAGE_SIZE + 1;
   const lastConcertNumber = Math.min(

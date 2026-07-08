@@ -10,6 +10,7 @@ type ConcertListOptions = {
   region?: string;
   genre?: string;
   seatMapOwnerId?: string | null;
+  skip?: number;
   take?: number;
 };
 
@@ -157,11 +158,28 @@ function getSeatMapOwnerWhere(
 export async function getConcertList(options: ConcertListOptions = {}) {
   const scope = options.scope ?? "upcoming";
   const seatMapOwnerId = options.seatMapOwnerId;
+  const where = getConcertWhere(options);
 
   if (!seatMapOwnerId) {
     const concerts = await prisma.concert.findMany({
-      where: getConcertWhere(options),
-      include: {
+      where,
+      select: {
+        id: true,
+        title: true,
+        artist: true,
+        venueName: true,
+        region: true,
+        startDate: true,
+        endDate: true,
+        priceMin: true,
+        priceMax: true,
+        posterImageUrl: true,
+        description: true,
+        genre: true,
+        bookingUrl: true,
+        externalSource: true,
+        syncedAt: true,
+        isSample: true,
         _count: {
           select: {
             reviews: true,
@@ -169,6 +187,7 @@ export async function getConcertList(options: ConcertListOptions = {}) {
         },
       },
       orderBy: getConcertListOrderBy(scope),
+      skip: options.skip,
       take: options.take,
     });
 
@@ -199,8 +218,24 @@ export async function getConcertList(options: ConcertListOptions = {}) {
 
   const seatMapWhere = getSeatMapOwnerWhere(seatMapOwnerId);
   const concerts = await prisma.concert.findMany({
-    where: getConcertWhere(options),
-    include: {
+    where,
+    select: {
+      id: true,
+      title: true,
+      artist: true,
+      venueName: true,
+      region: true,
+      startDate: true,
+      endDate: true,
+      priceMin: true,
+      priceMax: true,
+      posterImageUrl: true,
+      description: true,
+      genre: true,
+      bookingUrl: true,
+      externalSource: true,
+      syncedAt: true,
+      isSample: true,
       _count: {
         select: {
           seatMaps: {
@@ -223,6 +258,7 @@ export async function getConcertList(options: ConcertListOptions = {}) {
       },
     },
     orderBy: getConcertListOrderBy(scope),
+    skip: options.skip,
     take: options.take,
   });
 
@@ -255,7 +291,15 @@ export async function getConcertList(options: ConcertListOptions = {}) {
   });
 }
 
-export async function getConcertFilterOptions(options: ConcertListOptions = {}) {
+export async function getConcertCount(options: ConcertListOptions = {}) {
+  return prisma.concert.count({
+    where: getConcertWhere(options),
+  });
+}
+
+export async function getConcertFilterOptions(
+  options: ConcertListOptions = {},
+) {
   const scopeWhere = getConcertWhere({
     scope: options.scope,
   });
