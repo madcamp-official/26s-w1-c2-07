@@ -142,22 +142,34 @@ export default async function ReviewsHubPage({
     redirect("/login?redirect=/reviews");
   }
 
-  const concerts = await getRegisteredConcertsForUser(user.id);
-  const selectedConcertId = getSelectedConcertId(
-    concerts,
-    resolvedSearchParams?.concertId,
-  );
   const page = parsePage(resolvedSearchParams?.page);
   const sortMode = normalizeReviewSortMode(resolvedSearchParams?.sort);
   const scoreField = normalizeReviewScoreField(resolvedSearchParams?.score);
-  const selectedConcert = selectedConcertId
-    ? await getConcertReviewData(selectedConcertId, {
+  const requestedConcertId = resolvedSearchParams?.concertId;
+  const requestedReviewDataPromise = requestedConcertId
+    ? getConcertReviewData(requestedConcertId, {
         page,
         pageSize: REVIEW_PAGE_SIZE,
         sortMode,
         scoreField,
         zoneId: resolvedSearchParams?.zoneId ?? null,
       })
+    : Promise.resolve(null);
+  const [concerts, requestedReviewData] = await Promise.all([
+    getRegisteredConcertsForUser(user.id),
+    requestedReviewDataPromise,
+  ]);
+  const selectedConcertId = getSelectedConcertId(concerts, requestedConcertId);
+  const selectedConcert = selectedConcertId
+    ? selectedConcertId === requestedConcertId
+      ? requestedReviewData
+      : await getConcertReviewData(selectedConcertId, {
+          page,
+          pageSize: REVIEW_PAGE_SIZE,
+          sortMode,
+          scoreField,
+          zoneId: resolvedSearchParams?.zoneId ?? null,
+        })
     : null;
 
   return (
@@ -182,9 +194,7 @@ export default async function ReviewsHubPage({
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-lg bg-primary/10 text-primary">
             <MessageSquare className="h-7 w-7" aria-hidden="true" />
           </div>
-          <h2 className="mt-5 text-2xl font-black">
-            등록한 배치도가 없습니다
-          </h2>
+          <h2 className="mt-5 text-2xl font-black">등록한 배치도가 없습니다</h2>
           <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
             좌석 배치도를 등록한 공연이 생기면 해당 공연의 리뷰를 확인할 수
             있습니다.

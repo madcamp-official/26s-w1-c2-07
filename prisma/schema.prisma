@@ -86,6 +86,8 @@ model Concert {
   @@index([startDate])
   @@index([externalSource, syncedAt])
   @@index([isSample, isVisible])
+  @@index([isVisible, isSample, endDate, startDate])
+  @@index([isVisible, isSample, createdAt, startDate])
 }
 
 model ConcertSchedule {
@@ -186,6 +188,8 @@ model Review {
   @@index([userId])
   @@index([concertId])
   @@index([zoneId])
+  @@index([userId, createdAt])
+  @@index([concertId, createdAt])
 }
 
 model ReviewReport {
@@ -227,4 +231,5 @@ model PracticeSession {
   @@index([userId])
   @@index([concertId])
   @@index([selectedZoneId])
+  @@index([userId, createdAt])
 }

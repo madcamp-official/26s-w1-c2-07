@@ -144,6 +144,104 @@ export async function getConcertReviewData(
     return null;
   }
 
+  const locationRows = await prisma.review.findMany({
+    where: {
+      concertId: concert.id,
+    },
+    select: {
+      seatFloor: true,
+      seatSection: true,
+      zone: {
+        select: {
+          id: true,
+          name: true,
+          grade: true,
+        },
+      },
+    },
+  });
+  const zoneCounts = new Map<
+    string,
+    {
+      id: string;
+      label: string;
+      count: number;
+    }
+  >();
+
+  for (const review of locationRows) {
+    const locationKey = getReviewLocationKey(review);
+    const currentZone = zoneCounts.get(locationKey);
+
+    zoneCounts.set(locationKey, {
+      id: locationKey,
+      label: getReviewLocationLabel(review),
+      count: (currentZone?.count ?? 0) + 1,
+    });
+  }
+
+  const zoneOptions = Array.from(zoneCounts.values()).sort((a, b) =>
+    a.label.localeCompare(b.label, "ko-KR"),
+  );
+  const requestedZoneId = options.zoneId
+    ? normalizeReviewLocationKey(options.zoneId)
+    : null;
+  const selectedZoneId =
+    requestedZoneId && zoneOptions.some((zone) => zone.id === requestedZoneId)
+      ? requestedZoneId
+      : null;
+  const canUsePagedQuery = !selectedZoneId && sortMode === "latest";
+
+  if (canUsePagedQuery) {
+    const totalCount = concert._count.reviews;
+    const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+    const page = Math.min(requestedPage, totalPages);
+    const reviews = await prisma.review.findMany({
+      where: {
+        concertId: concert.id,
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            nickname: true,
+            profileImageUrl: true,
+          },
+        },
+        zone: {
+          select: {
+            id: true,
+            name: true,
+            grade: true,
+            price: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    });
+
+    return {
+      concert,
+      reviews,
+      zoneOptions,
+      filters: {
+        sortMode,
+        scoreField,
+        zoneId: selectedZoneId,
+      },
+      pagination: {
+        page,
+        pageSize,
+        totalCount,
+        totalPages,
+      },
+    };
+  }
+
   const allReviews = await prisma.review.findMany({
     where: {
       concertId: concert.id,
@@ -166,38 +264,10 @@ export async function getConcertReviewData(
       },
     },
   });
-  const zoneCounts = new Map<
-    string,
-    {
-      id: string;
-      label: string;
-      count: number;
-    }
-  >();
-
-  for (const review of allReviews) {
-    const locationKey = getReviewLocationKey(review);
-    const currentZone = zoneCounts.get(locationKey);
-
-    zoneCounts.set(locationKey, {
-      id: locationKey,
-      label: getReviewLocationLabel(review),
-      count: (currentZone?.count ?? 0) + 1,
-    });
-  }
-
-  const zoneOptions = Array.from(zoneCounts.values()).sort((a, b) =>
-    a.label.localeCompare(b.label, "ko-KR"),
-  );
-  const requestedZoneId = options.zoneId
-    ? normalizeReviewLocationKey(options.zoneId)
-    : null;
-  const selectedZoneId =
-    requestedZoneId && zoneOptions.some((zone) => zone.id === requestedZoneId)
-      ? requestedZoneId
-      : null;
   const filteredReviews = selectedZoneId
-    ? allReviews.filter((review) => getReviewLocationKey(review) === selectedZoneId)
+    ? allReviews.filter(
+        (review) => getReviewLocationKey(review) === selectedZoneId,
+      )
     : allReviews;
   const sortedReviews = [...filteredReviews].sort((a, b) => {
     if (sortMode === "rating_desc") {
