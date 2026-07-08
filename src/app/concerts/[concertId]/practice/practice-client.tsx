@@ -134,6 +134,22 @@ type SeatRowSummary = {
   seats: VirtualSeatSummary[];
 };
 
+type NolOldSeatGridCell = {
+  key: string;
+  seat: VirtualSeatSummary | null;
+  displaySeatNumber: number | null;
+};
+
+type NolOldShapedSeatRow = {
+  rowLabel: string;
+  cells: NolOldSeatGridCell[];
+};
+
+type NolOldShapedSeatGridLayout = {
+  columnCount: number;
+  rows: NolOldShapedSeatRow[];
+};
+
 type HorizontalSegment = {
   start: number;
   end: number;
@@ -1386,6 +1402,235 @@ function isPointInsidePolygon(point: Point, polygon: Point[]) {
   return isInside;
 }
 
+function getNolOldValidGridColumns(input: {
+  rowIndex: number;
+  rowCount: number;
+  columnCount: number;
+  polygon: Point[];
+}) {
+  const bounds = getPointBounds(input.polygon);
+
+  if (bounds.width <= GEOMETRY_EPSILON || bounds.height <= GEOMETRY_EPSILON) {
+    return [];
+  }
+
+  const y =
+    bounds.y + bounds.height * ((input.rowIndex + 0.5) / input.rowCount);
+  const segments = getPolygonHorizontalSegments(input.polygon, y);
+
+  if (segments.length === 0) {
+    return [];
+  }
+
+  return Array.from({ length: input.columnCount }, (_, columnIndex) => {
+    const x =
+      bounds.x + bounds.width * ((columnIndex + 0.5) / input.columnCount);
+    const isInsideSegment = segments.some(
+      (segment) => x >= segment.start && x <= segment.end,
+    );
+
+    return isInsideSegment ? columnIndex : null;
+  }).filter((columnIndex): columnIndex is number => columnIndex !== null);
+}
+
+function getCenteredColumnIndexes(columnIndexes: number[], targetCount: number) {
+  if (targetCount <= 0) {
+    return [];
+  }
+
+  if (targetCount >= columnIndexes.length) {
+    return columnIndexes;
+  }
+
+  const startIndex = Math.floor((columnIndexes.length - targetCount) / 2);
+
+  return columnIndexes.slice(startIndex, startIndex + targetCount);
+}
+
+function allocateNolOldShapedRowSeatCounts(
+  rowCapacities: number[],
+  totalSeatCount: number,
+) {
+  const allocations = Array.from({ length: rowCapacities.length }, () => 0);
+  const nonEmptyRowIndexes = rowCapacities
+    .map((capacity, rowIndex) => ({
+      capacity,
+      rowIndex,
+    }))
+    .filter((row) => row.capacity > 0);
+
+  if (totalSeatCount <= 0 || nonEmptyRowIndexes.length === 0) {
+    return allocations;
+  }
+
+  let remainingSeatCount = totalSeatCount;
+
+  if (totalSeatCount >= nonEmptyRowIndexes.length) {
+    for (const row of nonEmptyRowIndexes) {
+      allocations[row.rowIndex] = 1;
+      remainingSeatCount -= 1;
+    }
+  }
+
+  const remainingCapacity = rowCapacities.reduce(
+    (total, capacity, rowIndex) =>
+      total + Math.max(0, capacity - allocations[rowIndex]),
+    0,
+  );
+
+  if (remainingCapacity <= 0) {
+    return allocations;
+  }
+
+  const rowRemainders = rowCapacities.map((capacity, rowIndex) => {
+    const availableCapacity = Math.max(0, capacity - allocations[rowIndex]);
+    const rawSeatCount =
+      (remainingSeatCount * availableCapacity) / remainingCapacity;
+    const additionalSeatCount = Math.min(
+      availableCapacity,
+      Math.floor(rawSeatCount),
+    );
+
+    allocations[rowIndex] += additionalSeatCount;
+
+    return {
+      rowIndex,
+      remainder: rawSeatCount - additionalSeatCount,
+    };
+  });
+  let allocatedSeatCount = allocations.reduce(
+    (total, allocation) => total + allocation,
+    0,
+  );
+
+  for (const row of rowRemainders.sort(
+    (firstRow, secondRow) =>
+      secondRow.remainder - firstRow.remainder ||
+      rowCapacities[secondRow.rowIndex] - rowCapacities[firstRow.rowIndex] ||
+      firstRow.rowIndex - secondRow.rowIndex,
+  )) {
+    if (allocatedSeatCount >= totalSeatCount) {
+      break;
+    }
+
+    if (allocations[row.rowIndex] >= rowCapacities[row.rowIndex]) {
+      continue;
+    }
+
+    allocations[row.rowIndex] += 1;
+    allocatedSeatCount += 1;
+  }
+
+  return allocations;
+}
+
+function getNolOldShapedSeatGridLayout(input: {
+  rows: SeatRowSummary[];
+  polygon: Point[] | null;
+  maxSeatsPerRow: number;
+}): NolOldShapedSeatGridLayout | null {
+  const polygon = input.polygon;
+
+  if (!polygon || input.rows.length === 0 || input.maxSeatsPerRow <= 0) {
+    return null;
+  }
+
+  const bounds = getPointBounds(polygon);
+
+  if (bounds.width <= GEOMETRY_EPSILON || bounds.height <= GEOMETRY_EPSILON) {
+    return null;
+  }
+
+  const totalSeatCount = input.rows.reduce(
+    (total, row) => total + row.seats.length,
+    0,
+  );
+  const minimumColumnCount = Math.max(
+    input.maxSeatsPerRow,
+    Math.ceil(totalSeatCount / input.rows.length),
+  );
+  const maximumColumnCount = Math.max(
+    minimumColumnCount,
+    input.maxSeatsPerRow * 4,
+  );
+  let columnCount = minimumColumnCount;
+  let rowColumns: number[][] = [];
+
+  for (
+    let candidateColumnCount = minimumColumnCount;
+    candidateColumnCount <= maximumColumnCount;
+    candidateColumnCount += 1
+  ) {
+    const candidateRowColumns = input.rows.map((_, rowIndex) =>
+      getNolOldValidGridColumns({
+        rowIndex,
+        rowCount: input.rows.length,
+        columnCount: candidateColumnCount,
+        polygon,
+      }),
+    );
+    const candidateCapacity = candidateRowColumns.reduce(
+      (total, columns) => total + columns.length,
+      0,
+    );
+
+    if (candidateCapacity >= totalSeatCount) {
+      columnCount = candidateColumnCount;
+      rowColumns = candidateRowColumns;
+      break;
+    }
+  }
+
+  if (rowColumns.length === 0) {
+    return null;
+  }
+
+  const flatSeats = input.rows.flatMap((row) => row.seats);
+  const rowSeatCounts = allocateNolOldShapedRowSeatCounts(
+    rowColumns.map((columns) => columns.length),
+    totalSeatCount,
+  );
+  let nextSeatIndex = 0;
+
+  return {
+    columnCount,
+    rows: input.rows.map((row, rowIndex) => {
+      const cells: NolOldSeatGridCell[] = Array.from(
+        { length: columnCount },
+        (_, columnIndex) => ({
+          key: `${row.rowLabel}-empty-${columnIndex}`,
+          seat: null,
+          displaySeatNumber: null,
+        }),
+      );
+      const visibleColumns = getCenteredColumnIndexes(
+        rowColumns[rowIndex],
+        rowSeatCounts[rowIndex],
+      );
+
+      for (const [displaySeatIndex, columnIndex] of visibleColumns.entries()) {
+        const seat = flatSeats[nextSeatIndex];
+
+        if (!seat) {
+          break;
+        }
+
+        cells[columnIndex] = {
+          key: seat.id,
+          seat,
+          displaySeatNumber: displaySeatIndex + 1,
+        };
+        nextSeatIndex += 1;
+      }
+
+      return {
+        rowLabel: row.rowLabel,
+        cells,
+      };
+    }),
+  } satisfies NolOldShapedSeatGridLayout;
+}
+
 function clampDirectSeatSizePercent(value: number) {
   if (!Number.isFinite(value) || value <= 0) {
     return DIRECT_SEAT_FALLBACK_SIZE_PERCENT;
@@ -1720,8 +1965,17 @@ export function PracticeClient({
     0,
   );
   const compactSeatSizePx = Math.max(
-    22,
-    Math.min(36, Math.floor(700 / Math.max(1, maxSeatsPerRow))),
+    11,
+    Math.min(16, Math.floor(330 / Math.max(1, maxSeatsPerRow))),
+  );
+  const nolOldShapedSeatGridLayout = useMemo(
+    () =>
+      getNolOldShapedSeatGridLayout({
+        rows: groupedSeats,
+        polygon: isSplitSeatSelect ? (selectedZone?.polygon ?? null) : null,
+        maxSeatsPerRow,
+      }),
+    [groupedSeats, isSplitSeatSelect, maxSeatsPerRow, selectedZone?.polygon],
   );
   const directSeatMapSeats = useMemo(
     () =>
@@ -1742,15 +1996,16 @@ export function PracticeClient({
           seats,
         }));
         const sortedSeats = rows.flatMap((row) => row.seats);
-        const uniformSeatGridLayout = isDirectSeatMapSelect
-          ? getUniformSeatGridLayout({
-              seatCount: sortedSeats.length,
-              bbox,
-              polygon,
-              coordinateBounds,
-              seatMapHeightRatio,
-            })
-          : null;
+        const uniformSeatGridLayout =
+          isDirectSeatMapSelect || isYes24SeatSelect
+            ? getUniformSeatGridLayout({
+                seatCount: sortedSeats.length,
+                bbox,
+                polygon,
+                coordinateBounds,
+                seatMapHeightRatio,
+              })
+            : null;
 
         if (uniformSeatGridLayout) {
           return sortedSeats.flatMap((seat, seatIndex) => {
@@ -1861,7 +2116,12 @@ export function PracticeClient({
           }),
         );
       }),
-    [isDirectSeatMapSelect, seatMapHeightRatio, zonesWithGeometry],
+    [
+      isDirectSeatMapSelect,
+      isYes24SeatSelect,
+      seatMapHeightRatio,
+      zonesWithGeometry,
+    ],
   );
   const activeYes24SeatGroupSeats = useMemo(
     () =>
@@ -2733,6 +2993,50 @@ export function PracticeClient({
     className?: string;
     showResetButton?: boolean;
   } = {}) {
+    function renderNolOldSeatButton(
+      seat: VirtualSeatSummary,
+      displaySeatNumber = seat.seatNumber,
+    ) {
+      const isSelected = selectedSeatId === seat.id;
+      const isCandidate = remainingSelectableSeatIdSet.has(seat.id);
+      const isSoldOut = soldOutSeatIdSet.has(seat.id);
+      const isSelectable = seat.status === "available" && !isCompleting;
+
+      return (
+        <button
+          key={seat.id}
+          type="button"
+          className={[
+            "inline-flex aspect-square items-center justify-center rounded-[1px] border bg-background text-[4px] font-normal leading-none transition",
+            isSelected
+              ? "border-primary bg-primary text-primary-foreground"
+              : "",
+            !isSelected && isCandidate
+              ? "border-emerald-500 bg-emerald-50 text-emerald-900 hover:border-primary"
+              : "",
+            !isSelected && !isCandidate
+              ? "border-slate-100 bg-slate-50 text-slate-400"
+              : "",
+          ].join(" ")}
+          style={{
+            width: `${compactSeatSizePx}px`,
+            height: `${compactSeatSizePx}px`,
+          }}
+          title={
+            isCandidate
+              ? "선택 가능한 남은 좌석"
+              : isSoldOut
+                ? "이미 선택된 좌석입니다."
+                : "선택할 수 없는 좌석"
+          }
+          disabled={!isSelectable}
+          onClick={() => handleSeatClick(seat)}
+        >
+          {displaySeatNumber}
+        </button>
+      );
+    }
+
     return (
       <div
         className={["rounded-md border bg-secondary p-4", className].join(" ")}
@@ -2770,62 +3074,56 @@ export function PracticeClient({
             이전 페이지에서 구역을 먼저 선택하세요.
           </p>
         ) : groupedSeats.length > 0 ? (
-          <div className="rounded-md border bg-background p-3">
-            <div className="grid gap-1.5">
-              {groupedSeats.map((row) => (
-                <div
-                  key={row.rowLabel}
-                  className="grid items-center gap-1.5"
-                  style={{
-                    gridTemplateColumns: `2.5rem repeat(${maxSeatsPerRow}, minmax(0, 1fr))`,
-                  }}
-                >
-                  <span className="text-xs text-muted-foreground">
-                    {row.rowLabel}
-                  </span>
-                  {row.seats.map((seat) => {
-                    const isSelected = selectedSeatId === seat.id;
-                    const isCandidate = remainingSelectableSeatIdSet.has(
-                      seat.id,
-                    );
-                    const isSoldOut = soldOutSeatIdSet.has(seat.id);
-                    const isSelectable =
-                      seat.status === "available" && !isCompleting;
-
-                    return (
-                      <button
-                        key={seat.id}
-                        type="button"
-                        className={[
-                          "aspect-square rounded-sm border bg-background text-[10px] font-medium transition",
-                          isSelected
-                            ? "border-primary bg-primary text-primary-foreground"
-                            : "",
-                          !isSelected && isCandidate
-                            ? "border-emerald-500 bg-emerald-50 text-emerald-900 hover:border-primary"
-                            : "",
-                          !isCandidate ? "opacity-35" : "",
-                        ].join(" ")}
-                        style={{
-                          maxWidth: `${compactSeatSizePx}px`,
-                          maxHeight: `${compactSeatSizePx}px`,
-                        }}
-                        title={
-                          isCandidate
-                            ? "선택 가능한 남은 좌석"
-                            : isSoldOut
-                              ? "이미 선택된 좌석입니다."
-                              : "선택할 수 없는 좌석"
-                        }
-                        disabled={!isSelectable}
-                        onClick={() => handleSeatClick(seat)}
-                      >
-                        {seat.seatNumber}
-                      </button>
-                    );
-                  })}
-                </div>
-              ))}
+          <div className="overflow-auto rounded-md border bg-background p-2">
+            <div className="grid gap-1">
+              {nolOldShapedSeatGridLayout
+                ? nolOldShapedSeatGridLayout.rows.map((row) => (
+                    <div
+                      key={row.rowLabel}
+                      className="grid min-w-max items-center gap-1"
+                      style={{
+                        gridTemplateColumns: `2.5rem repeat(${nolOldShapedSeatGridLayout.columnCount}, ${compactSeatSizePx}px)`,
+                      }}
+                    >
+                      <span className="text-xs text-muted-foreground">
+                        {row.rowLabel}
+                      </span>
+                      {row.cells.map((cell) =>
+                        cell.seat ? (
+                          renderNolOldSeatButton(
+                            cell.seat,
+                            cell.displaySeatNumber ?? cell.seat.seatNumber,
+                          )
+                        ) : (
+                          <span
+                            key={cell.key}
+                            className="invisible aspect-square pointer-events-none"
+                            style={{
+                              width: `${compactSeatSizePx}px`,
+                              height: `${compactSeatSizePx}px`,
+                            }}
+                            aria-hidden="true"
+                          />
+                        ),
+                      )}
+                    </div>
+                  ))
+                : groupedSeats.map((row) => (
+                    <div
+                      key={row.rowLabel}
+                      className="grid items-center gap-1"
+                      style={{
+                        gridTemplateColumns: `2.5rem repeat(${maxSeatsPerRow}, ${compactSeatSizePx}px)`,
+                      }}
+                    >
+                      <span className="text-xs text-muted-foreground">
+                        {row.rowLabel}
+                      </span>
+                      {row.seats.map((seat, seatIndex) =>
+                        renderNolOldSeatButton(seat, seatIndex + 1),
+                      )}
+                    </div>
+                  ))}
             </div>
           </div>
         ) : (
@@ -3331,7 +3629,7 @@ export function PracticeClient({
                                     ? "z-20 border-primary bg-primary ring-2 ring-white"
                                     : "",
                                   !isSelected && isCandidate
-                                    ? "z-10 border-emerald-950 bg-emerald-400 ring-1 ring-white hover:border-primary hover:bg-primary"
+                                    ? "z-10 bg-emerald-400 ring-1 ring-white hover:bg-primary"
                                     : "",
                                   !isSelected && !isCandidate
                                     ? "border-slate-500 bg-slate-300 opacity-80"
@@ -3344,6 +3642,12 @@ export function PracticeClient({
                                   left: `${seat.x * 100}%`,
                                   top: `${seat.y * 100}%`,
                                   width: `min(${directSeatMaxSizePx.toFixed(1)}px, ${directSeatMapUniformSizePercent.toFixed(4)}%)`,
+                                  ...(isCandidate && !isSelected
+                                    ? {
+                                        borderColor: "#020617",
+                                        borderWidth: "4px",
+                                      }
+                                    : {}),
                                 }}
                                 title={`${seat.zoneName} · ${seat.rowLabel} ${seat.seatNumber}번`}
                                 aria-label={`${seat.zoneName} ${seat.rowLabel} ${seat.seatNumber}번 좌석`}
