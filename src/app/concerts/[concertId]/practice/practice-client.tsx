@@ -3038,11 +3038,10 @@ export function PracticeClient({
                 ? "이미 선택된 좌석입니다."
                 : "선택할 수 없는 좌석"
           }
+          aria-label={`${seat.rowLabel} ${displaySeatNumber}번 좌석`}
           disabled={!isSelectable}
           onClick={() => handleSeatClick(seat)}
-        >
-          {displaySeatNumber}
-        </button>
+        />
       );
     }
 
