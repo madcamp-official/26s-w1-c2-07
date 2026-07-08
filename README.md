@@ -249,7 +249,15 @@
 
 > 서비스의 전체 페이지 구조와 페이지 간 이동 흐름; 각 페이지의 주요 UI 구성, 입력 요소, 버튼, 사용자 행동 흐름 등을 간단한 와이어프레임 형태로 정리
 
-<!-- Figma 링크 또는 이미지 첨부 -->
+- **Figma:** [GrapeRush IA 및 화면 설계서](https://www.figma.com/design/hvDue9YMqE4VAC3VU4ydEU/1%EC%A3%BC%EC%B0%A8-%ED%99%94%EB%A9%B4%EC%84%A4%EA%B3%84%EC%84%9C?node-id=0-1&p=f&t=iOxTf1o25iE77HwG-0)
+
+<table>
+  <tr>
+    <td align="center" bgcolor="#ffffff">
+      <img src="./IA%20및%20화면설계서.png" alt="GrapeRush IA 및 화면 설계서" width="100%" />
+    </td>
+  </tr>
+</table>
 
 ---
 
