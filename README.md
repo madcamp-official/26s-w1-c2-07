@@ -255,9 +255,45 @@
 
 ## DB 스키마
 
-> 필요한 테이블, 주요 필드, 데이터 타입, 테이블 간 관계를 정리
+GrapeRush는 공연 정보를 중심으로 좌석 배치도, 좌석 구역, 가상 좌석, 좌석 리뷰, 티켓팅 연습 기록을 연결하는 구조로 설계했다. 좌석 배치도 이미지를 AI로 분석한 결과는 `SeatMap`과 `SeatZone`에 저장하고, 사용자의 연습 결과와 리뷰 데이터는 각각 `PracticeSession`, `Review`에 분리해 저장한다.
 
-<!-- ERD 이미지 또는 테이블 정의 -->
+<table>
+  <tr>
+    <td align="center" bgcolor="#ffffff">
+      <img src="./db-erd.svg" alt="GrapeRush DB ERD" width="100%" />
+    </td>
+  </tr>
+</table>
+
+### 주요 테이블
+
+| 테이블 | 역할 | 주요 필드 |
+| ------ | ---- | --------- |
+| `Profile` | 사용자 프로필 정보 | `id`, `nickname`, `profileImageUrl`, `createdAt` |
+| `Concert` | 공연 기본 정보 | `title`, `artist`, `venueName`, `region`, `startDate`, `endDate`, `priceMin`, `priceMax` |
+| `ConcertSchedule` | 공연 회차 및 일정 정보 | `concertId`, `performanceDate`, `roundName`, `startTime` |
+| `SeatMap` | 공연별 좌석 배치도와 AI 분석 상태 | `concertId`, `imageUrl`, `analysisStatus`, `aiRawResult`, `createdBy` |
+| `SeatZone` | 좌석 배치도 안의 구역 정보 | `seatMapId`, `name`, `grade`, `price`, `polygon`, `bbox`, `isAiGenerated` |
+| `VirtualSeat` | 티켓팅 연습에 사용하는 구역별 가상 좌석 | `zoneId`, `rowLabel`, `seatNumber`, `status`, `x`, `y` |
+| `Review` | 사용자가 작성한 좌석 리뷰 | `userId`, `concertId`, `zoneId`, `viewScore`, `soundScore`, `distanceScore`, `satisfactionScore`, `content`, `imageUrls` |
+| `PracticeSession` | 티켓팅 연습 기록 | `userId`, `concertId`, `scheduleId`, `templateType`, `difficulty`, `status`, `selectedZoneId`, `selectedSeatId`, `elapsedMs` |
+| `ReviewReport` | 부적절한 리뷰 신고 내역 | `reviewId`, `reporterId`, `reason`, `details`, `createdAt` |
+
+### 주요 관계
+
+- `Concert`는 여러 개의 `ConcertSchedule`, `SeatMap`, `Review`, `PracticeSession`을 가진다.
+- `SeatMap`은 하나의 `Concert`에 속하며, 여러 개의 `SeatZone`을 가진다.
+- `SeatZone`은 하나의 `SeatMap`에 속하며, 여러 개의 `VirtualSeat`, `Review`, `PracticeSession`과 연결된다.
+- `Review`는 작성자인 `Profile`, 대상 공연인 `Concert`, 선택된 좌석 구역인 `SeatZone`과 연결된다.
+- `PracticeSession`은 사용자, 공연, 회차, 선택 구역, 선택 좌석을 저장해 티켓팅 연습 결과를 추적한다.
+- `ReviewReport`는 하나의 리뷰와 신고한 사용자를 연결하며, 같은 사용자가 같은 리뷰를 중복 신고하지 못하도록 `reviewId`와 `reporterId` 조합을 유니크하게 관리한다.
+
+### 설계 의도
+
+- AI 분석 원본은 `SeatMap.aiRawResult`에 보관하고, 서비스에서 활용하는 구역 정보는 `SeatZone`으로 정규화했다.
+- 실제 좌석 데이터가 부족한 경우에도 연습 기능을 제공하기 위해 `VirtualSeat`를 별도로 두었다.
+- 리뷰는 좌석 구역 기반 리뷰와 수동 좌석 정보 입력을 모두 지원하도록 설계했다.
+- 공연 정보, 리뷰, 연습 기록을 분리해 검색, 리뷰 조회, 연습 통계 기능을 독립적으로 확장할 수 있게 했다.
 
 ---
 
