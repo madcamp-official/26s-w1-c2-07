@@ -1972,10 +1972,19 @@ export function PracticeClient({
     () =>
       getNolOldShapedSeatGridLayout({
         rows: groupedSeats,
-        polygon: isSplitSeatSelect ? (selectedZone?.polygon ?? null) : null,
+        polygon:
+          isSplitSeatSelect || isMelonSeatSelect
+            ? (selectedZone?.polygon ?? null)
+            : null,
         maxSeatsPerRow,
       }),
-    [groupedSeats, isSplitSeatSelect, maxSeatsPerRow, selectedZone?.polygon],
+    [
+      groupedSeats,
+      isMelonSeatSelect,
+      isSplitSeatSelect,
+      maxSeatsPerRow,
+      selectedZone?.polygon,
+    ],
   );
   const directSeatMapSeats = useMemo(
     () =>
