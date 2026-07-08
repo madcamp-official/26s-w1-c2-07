@@ -12,7 +12,7 @@ import {
 export const MAX_TOTAL_SEAT_COUNT = MAX_TARGET_VIRTUAL_SEAT_TOTAL;
 const VIRTUAL_SEAT_CREATE_BATCH_SIZE = 1_000;
 
-type SeatZoneForGeneration = {
+export type SeatZoneForGeneration = {
   id: string;
   bbox: unknown;
   polygon: unknown;
@@ -216,6 +216,37 @@ export function getSeatZonePracticeReadiness(zone: SeatZoneForGeneration) {
     needsRepair,
     ready: hasGeometry && hasDisplayableSeats,
   };
+}
+
+export function getVirtualSeatReadinessForZones(
+  zones: SeatZoneForGeneration[],
+) {
+  const readinessResults = zones.map((zone) =>
+    getSeatZonePracticeReadiness(zone),
+  );
+  const missingGeometryZoneCount = readinessResults.filter(
+    (readiness) => !readiness.hasGeometry,
+  ).length;
+  const invalidSeatZoneCount = readinessResults.filter(
+    (readiness) => readiness.hasGeometry && !readiness.ready,
+  ).length;
+  const readyZoneCount = readinessResults.filter(
+    (readiness) => readiness.ready,
+  ).length;
+  const ready =
+    zones.length > 0 &&
+    missingGeometryZoneCount === 0 &&
+    readyZoneCount === zones.length;
+
+  return {
+    zoneCount: zones.length,
+    readyZoneCount,
+    repairedZoneCount: 0,
+    createdSeatCount: 0,
+    missingGeometryZoneCount,
+    invalidSeatZoneCount,
+    ready,
+  } satisfies VirtualSeatEnsureResult;
 }
 
 function getGeneratedSeatData(zone: SeatZoneForGeneration) {
@@ -436,30 +467,6 @@ export async function getVirtualSeatReadinessForSeatMap(seatMapId: string) {
       },
     },
   });
-  const readinessResults = zones.map((zone) =>
-    getSeatZonePracticeReadiness(zone),
-  );
-  const missingGeometryZoneCount = readinessResults.filter(
-    (readiness) => !readiness.hasGeometry,
-  ).length;
-  const invalidSeatZoneCount = readinessResults.filter(
-    (readiness) => readiness.hasGeometry && !readiness.ready,
-  ).length;
-  const readyZoneCount = readinessResults.filter(
-    (readiness) => readiness.ready,
-  ).length;
-  const ready =
-    zones.length > 0 &&
-    missingGeometryZoneCount === 0 &&
-    readyZoneCount === zones.length;
 
-  return {
-    zoneCount: zones.length,
-    readyZoneCount,
-    repairedZoneCount: 0,
-    createdSeatCount: 0,
-    missingGeometryZoneCount,
-    invalidSeatZoneCount,
-    ready,
-  } satisfies VirtualSeatEnsureResult;
+  return getVirtualSeatReadinessForZones(zones);
 }

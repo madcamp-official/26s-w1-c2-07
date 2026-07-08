@@ -98,6 +98,7 @@ model ConcertSchedule {
   practiceSessions PracticeSession[]
 
   @@index([concertId])
+  @@index([concertId, performanceDate, startTime])
 }
 
 model SeatMap {
@@ -117,6 +118,8 @@ model SeatMap {
 
   @@index([concertId])
   @@index([createdBy])
+  @@index([createdBy, createdAt])
+  @@index([concertId, createdBy, analysisStatus, createdAt])
 }
 
 model SeatZone {
@@ -138,6 +141,7 @@ model SeatZone {
   practiceSessions   PracticeSession[]
 
   @@index([seatMapId])
+  @@index([seatMapId, createdAt])
 }
 
 model VirtualSeat {

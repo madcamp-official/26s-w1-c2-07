@@ -13,7 +13,7 @@ import {
   type RegisteredConcertSummary,
   getRegisteredPracticeConcert,
 } from "@/lib/registered-concerts";
-import { getVirtualSeatReadinessForSeatMap } from "@/lib/virtual-seats";
+import { getVirtualSeatReadinessForZones } from "@/lib/virtual-seats";
 import { formatDateRange } from "@/utils/format";
 
 const requestedConcertIdSchema = z.string().uuid();
@@ -91,8 +91,8 @@ function PracticePreparationState({
         <div>
           <h2 className="text-xl font-black">티켓팅 연습 준비가 필요합니다</h2>
           <p className="mt-3 text-sm leading-6 text-muted-foreground">
-            티켓팅 연습을 시작하려면 좌석 배치도 AI 분석을 완료한 뒤 전체
-            좌석 수를 입력해 좌석 데이터를 생성해야 합니다.
+            티켓팅 연습을 시작하려면 좌석 배치도 AI 분석을 완료한 뒤 전체 좌석
+            수를 입력해 좌석 데이터를 생성해야 합니다.
           </p>
         </div>
       </div>
@@ -193,13 +193,18 @@ export default async function PracticeHubPage({
     redirect("/login?redirect=/practice");
   }
 
-  const registeredConcerts = await getRegisteredConcertsForUser(user.id);
   const parsedRequestedConcertId = requestedConcertIdSchema.safeParse(
     resolvedSearchParams?.concertId,
   );
   const requestedConcertId = parsedRequestedConcertId.success
     ? parsedRequestedConcertId.data
     : undefined;
+  const [registeredConcerts, requestedPracticeConcert] = await Promise.all([
+    getRegisteredConcertsForUser(user.id),
+    requestedConcertId
+      ? getRegisteredPracticeConcert(user.id, requestedConcertId)
+      : Promise.resolve(null),
+  ]);
 
   let visibleRegisteredConcerts = registeredConcerts;
 
@@ -229,31 +234,24 @@ export default async function PracticeHubPage({
   const selectedConcertSummary =
     visibleRegisteredConcerts.find(
       (concert) => concert.id === selectedConcertId,
-    ) ??
-    null;
-  const selectedConcert = selectedConcertId
-    ? await getRegisteredPracticeConcert(user.id, selectedConcertId)
-    : null;
+    ) ?? null;
+  const selectedConcert =
+    selectedConcertId && selectedConcertId === requestedConcertId
+      ? requestedPracticeConcert
+      : selectedConcertId
+        ? await getRegisteredPracticeConcert(user.id, selectedConcertId)
+        : null;
   const latestSeatMap = selectedConcert?.seatMaps[0] ?? null;
-  const zones =
-    latestSeatMap?.zones.map((zone) => ({
-      ...zone,
-      virtualSeats: zone.virtualSeats,
-    })) ?? [];
+  const zones = latestSeatMap?.zones ?? [];
   const hasZones = zones.length > 0;
-  let hasPracticeSeats =
-    zones.length > 0 && zones.every((zone) => zone.virtualSeats.length > 0);
+  let hasPracticeSeats = false;
   let isPracticeReady = false;
 
   if (selectedConcertId && latestSeatMap && hasZones) {
-    const seatPreparation = await getVirtualSeatReadinessForSeatMap(
-      latestSeatMap.id,
-    );
+    const seatPreparation = getVirtualSeatReadinessForZones(zones);
+
     hasPracticeSeats = seatPreparation.ready;
-    isPracticeReady =
-      seatPreparation.ready &&
-      zones.length > 0 &&
-      hasPracticeSeats;
+    isPracticeReady = seatPreparation.ready && zones.length > 0;
   }
 
   return (
@@ -272,6 +270,7 @@ export default async function PracticeHubPage({
       {selectedConcertSummary ? (
         selectedConcert && latestSeatMap && hasZones && isPracticeReady ? (
           <PracticeWorkspaceClient
+            key={latestSeatMap.id}
             concert={{
               id: selectedConcert.id,
               title: selectedConcert.title,
@@ -306,15 +305,7 @@ export default async function PracticeHubPage({
               price: zone.price,
               bbox: zone.bbox,
               polygon: zone.polygon,
-              virtualSeats: zone.virtualSeats.map((seat) => ({
-                id: seat.id,
-                rowLabel: seat.rowLabel,
-                seatNumber: seat.seatNumber,
-                status: seat.status,
-                zoneId: zone.id,
-                x: seat.x,
-                y: seat.y,
-              })),
+              virtualSeats: [],
             }))}
           />
         ) : (
