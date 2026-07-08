@@ -257,7 +257,13 @@
 
 GrapeRush는 공연 정보를 중심으로 좌석 배치도, 좌석 구역, 가상 좌석, 좌석 리뷰, 티켓팅 연습 기록을 연결하는 구조로 설계했다. 좌석 배치도 이미지를 AI로 분석한 결과는 `SeatMap`과 `SeatZone`에 저장하고, 사용자의 연습 결과와 리뷰 데이터는 각각 `PracticeSession`, `Review`에 분리해 저장한다.
 
-![GrapeRush DB ERD](./db-erd.svg)
+<table>
+  <tr>
+    <td align="center" bgcolor="#ffffff">
+      <img src="./db-erd.svg" alt="GrapeRush DB ERD" width="100%" />
+    </td>
+  </tr>
+</table>
 
 ### 주요 테이블
 
