@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { apiData, apiError } from "@/lib/api";
-import { getCurrentUserWithProfile } from "@/lib/auth";
+import { getCurrentUser, getCurrentUserWithProfile } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import {
   createAreaProportionalVirtualSeatsForSeatMap,
@@ -20,6 +20,104 @@ type SeatMapVirtualSeatsRouteContext = {
     seatMapId: string;
   }>;
 };
+
+type SortableVirtualSeat = {
+  rowLabel: string;
+  seatNumber: number;
+};
+
+function getRowNumber(rowLabel: string) {
+  const rowNumber = Number.parseInt(rowLabel, 10);
+
+  return Number.isFinite(rowNumber) ? rowNumber : Number.MAX_SAFE_INTEGER;
+}
+
+function sortVirtualSeats<T extends SortableVirtualSeat>(seats: T[]) {
+  return [...seats].sort((a, b) => {
+    const rowDiff = getRowNumber(a.rowLabel) - getRowNumber(b.rowLabel);
+
+    if (rowDiff !== 0) {
+      return rowDiff;
+    }
+
+    return a.seatNumber - b.seatNumber;
+  });
+}
+
+export async function GET(
+  _request: Request,
+  { params }: SeatMapVirtualSeatsRouteContext,
+) {
+  const user = await getCurrentUser();
+
+  if (!user) {
+    return apiError("로그인이 필요합니다.", 401);
+  }
+
+  const parsedParams = seatMapParamsSchema.safeParse(await params);
+
+  if (!parsedParams.success) {
+    return apiError("좌석 배치도 ID가 올바르지 않습니다.", 400);
+  }
+
+  const seatMap = await prisma.seatMap.findFirst({
+    where: {
+      id: parsedParams.data.seatMapId,
+      createdBy: user.id,
+      analysisStatus: "success",
+    },
+    select: {
+      id: true,
+      zones: {
+        orderBy: {
+          createdAt: "asc",
+        },
+        select: {
+          id: true,
+          name: true,
+          grade: true,
+          price: true,
+          bbox: true,
+          polygon: true,
+          virtualSeats: {
+            select: {
+              id: true,
+              rowLabel: true,
+              seatNumber: true,
+              status: true,
+              x: true,
+              y: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (!seatMap) {
+    return apiError("좌석 배치도를 찾을 수 없습니다.", 404);
+  }
+
+  return apiData({
+    zones: seatMap.zones.map((zone) => ({
+      id: zone.id,
+      name: zone.name,
+      grade: zone.grade,
+      price: zone.price,
+      bbox: zone.bbox,
+      polygon: zone.polygon,
+      virtualSeats: sortVirtualSeats(zone.virtualSeats).map((seat) => ({
+        id: seat.id,
+        rowLabel: seat.rowLabel,
+        seatNumber: seat.seatNumber,
+        status: seat.status,
+        zoneId: zone.id,
+        x: seat.x,
+        y: seat.y,
+      })),
+    })),
+  });
+}
 
 export async function POST(
   request: Request,

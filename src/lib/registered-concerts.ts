@@ -227,12 +227,16 @@ export async function getRegisteredPracticeConcert(
               price: true,
               bbox: true,
               polygon: true,
-              virtualSeats: {
+              allocatedSeatCount: true,
+              virtualSeatConfig: true,
+              _count: {
                 select: {
-                  id: true,
-                  rowLabel: true,
-                  seatNumber: true,
-                  status: true,
+                  virtualSeats: true,
+                },
+              },
+              virtualSeats: {
+                take: 1,
+                select: {
                   x: true,
                   y: true,
                 },

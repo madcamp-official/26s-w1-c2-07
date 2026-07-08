@@ -7,7 +7,7 @@ import { PracticeClient } from "@/app/concerts/[concertId]/practice/practice-cli
 import { Button } from "@/components/ui/button";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getVirtualSeatReadinessForSeatMap } from "@/lib/virtual-seats";
+import { getVirtualSeatReadinessForZones } from "@/lib/virtual-seats";
 
 const concertIdSchema = z.string().uuid();
 
@@ -71,12 +71,16 @@ async function getPracticeConcert(concertId: string, userId: string) {
               price: true,
               bbox: true,
               polygon: true,
-              virtualSeats: {
+              allocatedSeatCount: true,
+              virtualSeatConfig: true,
+              _count: {
                 select: {
-                  id: true,
-                  rowLabel: true,
-                  seatNumber: true,
-                  status: true,
+                  virtualSeats: true,
+                },
+              },
+              virtualSeats: {
+                take: 1,
+                select: {
                   x: true,
                   y: true,
                 },
@@ -110,25 +114,16 @@ export default async function PracticePage({ params }: PracticePageProps) {
   }
 
   const latestSeatMap = concert.seatMaps[0] ?? null;
-  const zones =
-    latestSeatMap?.zones.map((zone) => ({
-      ...zone,
-      virtualSeats: zone.virtualSeats,
-    })) ?? [];
+  const zones = latestSeatMap?.zones ?? [];
   const hasZones = zones.length > 0;
-  let hasPracticeSeats =
-    zones.length > 0 && zones.every((zone) => zone.virtualSeats.length > 0);
+  let hasPracticeSeats = false;
   let isPracticeReady = false;
 
   if (latestSeatMap && hasZones) {
-    const seatPreparation = await getVirtualSeatReadinessForSeatMap(
-      latestSeatMap.id,
-    );
+    const seatPreparation = getVirtualSeatReadinessForZones(zones);
+
     hasPracticeSeats = seatPreparation.ready;
-    isPracticeReady =
-      seatPreparation.ready &&
-      zones.length > 0 &&
-      hasPracticeSeats;
+    isPracticeReady = seatPreparation.ready && zones.length > 0;
   }
 
   if (!latestSeatMap || !hasZones || !isPracticeReady) {
@@ -196,6 +191,7 @@ export default async function PracticePage({ params }: PracticePageProps) {
       </Button>
 
       <PracticeClient
+        key={latestSeatMap.id}
         concert={{
           id: concert.id,
           title: concert.title,
@@ -224,15 +220,7 @@ export default async function PracticePage({ params }: PracticePageProps) {
           price: zone.price,
           bbox: zone.bbox,
           polygon: zone.polygon,
-          virtualSeats: zone.virtualSeats.map((seat) => ({
-            id: seat.id,
-            rowLabel: seat.rowLabel,
-            seatNumber: seat.seatNumber,
-            status: seat.status,
-            zoneId: zone.id,
-            x: seat.x,
-            y: seat.y,
-          })),
+          virtualSeats: [],
         }))}
       />
     </main>

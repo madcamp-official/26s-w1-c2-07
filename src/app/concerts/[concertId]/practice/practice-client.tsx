@@ -209,6 +209,15 @@ type PracticeSessionResponse = {
   };
 };
 
+type PracticeSeatDataResponse = {
+  data?: {
+    zones?: SeatZoneSummary[];
+  };
+  error?: {
+    message?: string;
+  };
+};
+
 const CALENDAR_WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
 
 async function readPracticeSessionResponse(response: Response) {
@@ -229,6 +238,32 @@ async function readPracticeSessionResponse(response: Response) {
       },
     } satisfies PracticeSessionResponse;
   }
+}
+
+async function readPracticeSeatDataResponse(response: Response) {
+  const text = await response.text();
+
+  if (!text) {
+    return {} as PracticeSeatDataResponse;
+  }
+
+  try {
+    return JSON.parse(text) as PracticeSeatDataResponse;
+  } catch {
+    return {
+      error: {
+        message: response.ok
+          ? "좌석 데이터 응답을 해석하지 못했습니다."
+          : "좌석 데이터 요청 처리 중 서버 오류가 발생했습니다.",
+      },
+    } satisfies PracticeSeatDataResponse;
+  }
+}
+
+function hasLoadedPracticeSeatData(zones: SeatZoneSummary[]) {
+  return (
+    zones.length > 0 && zones.every((zone) => zone.virtualSeats.length > 0)
+  );
 }
 
 function formatDateTime(value: string) {
@@ -1040,7 +1075,10 @@ function getUniformGridDimensions(input: {
 }) {
   const visualAspectRatio = clampNumber(
     input.bounds.width /
-      Math.max(input.bounds.height * input.seatMapHeightRatio, GEOMETRY_EPSILON),
+      Math.max(
+        input.bounds.height * input.seatMapHeightRatio,
+        GEOMETRY_EPSILON,
+      ),
     0.18,
     5.5,
   );
@@ -1085,17 +1123,21 @@ function getUniformGridSeatSizePercent(input: {
       : Number.POSITIVE_INFINITY;
   const rowGap =
     input.rowCount > 1
-      ? (input.bounds.height * input.seatMapHeightRatio) /
-        (input.rowCount + 1)
+      ? (input.bounds.height * input.seatMapHeightRatio) / (input.rowCount + 1)
       : Number.POSITIVE_INFINITY;
   const nearestGap = Math.min(columnGap, rowGap);
 
   if (Number.isFinite(nearestGap)) {
-    return clampDirectSeatSizePercent(nearestGap * 100 * DIRECT_SEAT_SIZE_RATIO);
+    return clampDirectSeatSizePercent(
+      nearestGap * 100 * DIRECT_SEAT_SIZE_RATIO,
+    );
   }
 
   return clampDirectSeatSizePercent(
-    Math.min(input.bounds.width, input.bounds.height * input.seatMapHeightRatio) *
+    Math.min(
+      input.bounds.width,
+      input.bounds.height * input.seatMapHeightRatio,
+    ) *
       100 *
       0.5,
   );
@@ -1123,7 +1165,11 @@ function getRectangularUniformSeatGridLayout(input: {
   let remainingSeatCount = input.seatCount;
   const points: Point[] = [];
 
-  for (let rowIndex = 0; rowIndex < rowCount && remainingSeatCount > 0; rowIndex += 1) {
+  for (
+    let rowIndex = 0;
+    rowIndex < rowCount && remainingSeatCount > 0;
+    rowIndex += 1
+  ) {
     const rowSeatCount = Math.min(columnCount, remainingSeatCount);
     const allColumns = Array.from({ length: columnCount }, (_, columnIndex) =>
       getUniformGridPoint({
@@ -1433,7 +1479,10 @@ function getNolOldValidGridColumns(input: {
   }).filter((columnIndex): columnIndex is number => columnIndex !== null);
 }
 
-function getCenteredColumnIndexes(columnIndexes: number[], targetCount: number) {
+function getCenteredColumnIndexes(
+  columnIndexes: number[],
+  targetCount: number,
+) {
   if (targetCount <= 0) {
     return [];
   }
@@ -1744,11 +1793,12 @@ export function PracticeClient({
   concert,
   schedules,
   seatMap,
-  zones,
+  zones: initialZones,
   layout = "default",
   onPhaseChange,
 }: PracticeClientProps) {
   const isPanelLayout = layout === "panel";
+  const [practiceZones, setPracticeZones] = useState(initialZones);
   const [phase, setPhase] = useState<PracticePhase>("setup");
   const [templateType, setTemplateType] =
     useState<TicketTemplateType>("nol_old");
@@ -1781,12 +1831,14 @@ export function PracticeClient({
   const [message, setMessage] = useState("");
   const [toastMessage, setToastMessage] = useState("");
   const [isStarting, setIsStarting] = useState(false);
+  const [isSeatDataLoading, setIsSeatDataLoading] = useState(false);
   const [startCountdown, setStartCountdown] = useState<number | null>(null);
   const [isStartReady, setIsStartReady] = useState(false);
   const [startReadyAt, setStartReadyAt] = useState<number | null>(null);
   const [startDelayMs, setStartDelayMs] = useState<number | null>(null);
   const [isStartRequestSent, setIsStartRequestSent] = useState(false);
   const [isCompleting, setIsCompleting] = useState(false);
+  const [seatDataError, setSeatDataError] = useState("");
   const [seatMapZoom, setSeatMapZoom] = useState(DIRECT_SEAT_MAP_DEFAULT_ZOOM);
   const [melonMiniMapZoom, setMelonMiniMapZoom] = useState(
     MELON_MINI_MAP_MIN_ZOOM,
@@ -1806,6 +1858,9 @@ export function PracticeClient({
   const toastTimerRef = useRef<number | null>(null);
   const directSeatMapScrollRef = useRef<HTMLDivElement | null>(null);
   const melonMiniMapScrollRef = useRef<HTMLDivElement | null>(null);
+  const practiceZonesRef = useRef(initialZones);
+  const seatMapIdRef = useRef(seatMap.id);
+  const seatDataRequestRef = useRef<Promise<SeatZoneSummary[]> | null>(null);
   const melonMiniMapDragRef = useRef<{
     startX: number;
     startY: number;
@@ -1831,7 +1886,7 @@ export function PracticeClient({
       : getSeatMapHeightRatio(seatMap);
   const zonesWithGeometry = useMemo<SeatZoneWithGeometry[]>(
     () =>
-      zones.map((zone) => {
+      practiceZones.map((zone) => {
         const bbox = parseBbox(zone.bbox);
         const parsedPolygon = parsePolygon(zone.polygon);
         const polygon =
@@ -1850,7 +1905,7 @@ export function PracticeClient({
               : null,
         };
       }),
-    [zones],
+    [practiceZones],
   );
   const zoneOverlays = useMemo(
     () => zonesWithGeometry.filter((zone) => zone.polygon || zone.bbox),
@@ -1922,12 +1977,12 @@ export function PracticeClient({
     null;
   const allAvailableSeatIds = useMemo(
     () =>
-      zones.flatMap((zone) =>
+      practiceZones.flatMap((zone) =>
         zone.virtualSeats
           .filter((seat) => seat.status === "available")
           .map((seat) => seat.id),
       ),
-    [zones],
+    [practiceZones],
   );
   const remainingSelectableSeatIds = useMemo(
     () =>
@@ -2458,6 +2513,76 @@ export function PracticeClient({
     setVisibleCalendarMonth(getInitialCalendarMonth(schedules));
   }
 
+  async function loadPracticeSeatData() {
+    const currentZones = practiceZonesRef.current;
+
+    if (hasLoadedPracticeSeatData(currentZones)) {
+      return currentZones;
+    }
+
+    if (seatDataRequestRef.current) {
+      return seatDataRequestRef.current;
+    }
+
+    const requestSeatMapId = seatMap.id;
+
+    setIsSeatDataLoading(true);
+    setSeatDataError("");
+
+    const request = fetch(`/api/seat-maps/${seatMap.id}/virtual-seats`, {
+      cache: "no-store",
+    })
+      .then(async (response) => {
+        const payload = await readPracticeSeatDataResponse(response);
+
+        if (!response.ok || !Array.isArray(payload.data?.zones)) {
+          throw new Error(
+            payload.error?.message ?? "좌석 데이터를 불러오지 못했습니다.",
+          );
+        }
+
+        const nextZones = payload.data.zones;
+
+        if (!hasLoadedPracticeSeatData(nextZones)) {
+          throw new Error(
+            "좌석 데이터가 비어 있습니다. 배치도 등록 화면에서 좌석 데이터를 다시 생성해주세요.",
+          );
+        }
+
+        if (seatMapIdRef.current === requestSeatMapId) {
+          practiceZonesRef.current = nextZones;
+          setPracticeZones(nextZones);
+        }
+
+        return nextZones;
+      })
+      .catch((error) => {
+        const errorMessage =
+          error instanceof Error
+            ? error.message
+            : "좌석 데이터를 불러오지 못했습니다.";
+
+        if (seatMapIdRef.current === requestSeatMapId) {
+          setSeatDataError(errorMessage);
+        }
+
+        throw error;
+      })
+      .finally(() => {
+        if (seatMapIdRef.current === requestSeatMapId) {
+          setIsSeatDataLoading(false);
+        }
+
+        if (seatDataRequestRef.current === request) {
+          seatDataRequestRef.current = null;
+        }
+      });
+
+    seatDataRequestRef.current = request;
+
+    return request;
+  }
+
   function moveCalendarMonth(monthOffset: number) {
     setVisibleCalendarMonth((currentMonth) =>
       createLocalCalendarDate(
@@ -2486,12 +2611,16 @@ export function PracticeClient({
   function handleStartCountdown() {
     setMessage("");
     setToastMessage("");
+    setSeatDataError("");
     setIsStartReady(false);
     setStartReadyAt(null);
     setStartDelayMs(null);
     setIsStartRequestSent(false);
     setStartCountdown(5);
     setPhase("countdown");
+    void loadPracticeSeatData().catch(() => {
+      // The final start action retries and displays the actionable error.
+    });
   }
 
   function handleSeatMapImageLoad(event: SyntheticEvent<HTMLImageElement>) {
@@ -2661,6 +2790,8 @@ export function PracticeClient({
     clearToastTimer();
 
     try {
+      await loadPracticeSeatData();
+
       const response = await fetch("/api/practice-sessions", {
         method: "POST",
         headers: {
@@ -3293,7 +3424,7 @@ export function PracticeClient({
                 onClick={handleStart}
                 disabled={!isStartReady || isStartRequestSent}
               >
-                {isStarting ? (
+                {isStarting || isSeatDataLoading ? (
                   <Loader2
                     className="h-4 w-4 animate-spin"
                     aria-hidden="true"
@@ -3301,7 +3432,11 @@ export function PracticeClient({
                 ) : (
                   <Ticket className="h-4 w-4" aria-hidden="true" />
                 )}
-                {isStarting ? "마지막 클릭 반영 중" : "연습 시작"}
+                {isSeatDataLoading
+                  ? "좌석 데이터 준비 중"
+                  : isStarting
+                    ? "마지막 클릭 반영 중"
+                    : "연습 시작"}
               </Button>
             </div>
             {startDelayMs !== null ? (
@@ -4276,6 +4411,11 @@ export function PracticeClient({
         {message ? (
           <p className="mt-5 rounded-md border bg-secondary px-3 py-2 text-sm text-muted-foreground">
             {message}
+          </p>
+        ) : null}
+        {seatDataError ? (
+          <p className="mt-3 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+            {seatDataError}
           </p>
         ) : null}
       </section>
