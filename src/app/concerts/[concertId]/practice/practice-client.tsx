@@ -3021,7 +3021,7 @@ export function PracticeClient({
               ? "border-primary bg-primary text-primary-foreground"
               : "",
             !isSelected && isCandidate
-              ? "border-emerald-500 bg-emerald-50 text-emerald-900 hover:border-primary"
+              ? "border-emerald-950 bg-emerald-400 ring-1 ring-white hover:border-primary hover:bg-primary"
               : "",
             !isSelected && !isCandidate
               ? "border-slate-100 bg-slate-50 text-slate-400"
